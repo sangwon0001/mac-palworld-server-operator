@@ -111,6 +111,48 @@ case "$MODE" in
     ;;
 esac
 
+# ------------------------------------------------------- 잠자기 방지
+# 맥이 잠들면 서버도 함께 멈춥니다. 다만 `pmset -g custom` 의 sleep 값은
+# '설정된 정책'일 뿐, 실제로 잠드는지는 지금 걸려 있는 어서션이 결정합니다.
+# (Amphetamine 같은 상주 앱을 쓰고 있으면 정책이 1분이어도 잠들지 않습니다.)
+#
+# 그래서 정책값이 아니라 실효 상태를 먼저 확인하고,
+# 이미 누군가 막고 있으면 그대로 둡니다. 아무도 없을 때만 caffeinate 를 겁니다.
+
+# 유휴 잠자기를 막고 있는 '상주형' 프로세스가 있는지 확인합니다.
+# powerd/WindowServer/useractivityd/sharingd 등은 화면이 켜져 있거나 잠깐의
+# 활동으로 생겼다 사라지는 일시적 어서션이라 서버 보호로 칠 수 없습니다.
+existing_sleep_guard() {
+  pmset -g assertions 2>/dev/null \
+    | sed -n '/Listed by owning process/,$p' \
+    | grep 'PreventUserIdleSystemSleep' \
+    | grep -vE '\((powerd|WindowServer|useractivityd|sharingd|coreaudiod)\)' \
+    | sed -E 's/.*pid [0-9]+\(([^)]+)\).*/\1/' \
+    | head -n1
+}
+
+# caffeinate -w <PID> 는 해당 프로세스가 살아 있는 동안만 억제를 겁니다.
+# 서버 수명과 정확히 일치하므로 종료하면 자동으로 풀립니다.
+#   -d 디스플레이  -i 유휴 시스템 잠자기  -m 디스크  -s 시스템(AC 연결 시)
+if [[ "$MODE" != "fg" ]]; then
+  guard_pid="$(server_pid || server_pid_by_name || true)"
+  sleep_policy="$(pmset -g custom 2>/dev/null | awk '/AC Power/{f=1} f&&/^ *sleep /{print $2; exit}')"
+
+  if [[ "${sleep_policy:-0}" == "0" ]]; then
+    : # 시스템 정책이 '잠자지 않음' — 아무것도 할 필요 없음
+  elif keeper="$(existing_sleep_guard)" && [[ -n "$keeper" ]]; then
+    ok "잠자기 방지: $keeper 이(가) 이미 처리 중 — 건드리지 않습니다"
+  elif [[ -n "$guard_pid" ]] && command -v caffeinate >/dev/null 2>&1; then
+    nohup caffeinate -dims -w "$guard_pid" >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    ok "잠자기 방지 활성 (caffeinate — 서버 종료 시 자동 해제)"
+    printf '    %smacOS 정책은 %s분 후 잠자기이지만 서버가 도는 동안은 억제됩니다%s\n' \
+           "$_c_dim" "$sleep_policy" "$_c_reset"
+    printf '    %s덮개를 닫으면 외장 디스플레이 없이는 그래도 잠듭니다%s\n' \
+           "$_c_dim" "$_c_reset"
+  fi
+fi
+
 # ------------------------------------------------------- 포트 바인딩 대기 확인
 # UE5 서버는 월드 로딩에 수십 초가 걸릴 수 있어 넉넉히 기다립니다.
 info "UDP $GAME_PORT 바인딩 대기 중 (최대 120초)..."
