@@ -13,9 +13,16 @@ struct GameSettingsView: View {
     @State private var showApplyConfirm = false
 
     var body: some View {
-        HSplitView {
-            sidebar.frame(minWidth: 170, maxWidth: 220)
-            detail.frame(minWidth: 430)
+        // [주의] 여기서 HSplitView 를 쓰면 안 됩니다.
+        // HSplitView 는 자식에게 폭을 제안하고 결과에 따라 다시 제안하는데,
+        // 아래 목록에 '폭에 따라 높이가 정해지는' 줄(fixedSize 로 여러 줄 감싸는
+        // 설명 텍스트)이 섞이면 제안이 수렴하지 않고 무한 재계산에 빠집니다.
+        // 실제로 메인 스레드가 sizeThatFits 안에서 100% 를 태우며 멈췄습니다.
+        // 사이드바 폭을 고정하면 그 순환 자체가 사라집니다.
+        HStack(spacing: 0) {
+            sidebar.frame(width: 190)
+            Divider()
+            detail.frame(maxWidth: .infinity)
         }
         .frame(minWidth: 700, minHeight: 560)
         .task { await controller.loadSettings() }
@@ -70,7 +77,12 @@ struct GameSettingsView: View {
                 )
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
+                    // LazyVStack 이 아니라 VStack 을 씁니다.
+                    // Lazy 계열은 스크롤 위치에 따라 자식을 늘렸다 줄이며 크기를
+                    // 다시 재는데, 그 과정이 위의 폭 제안과 얽혀 재계산이 반복됩니다.
+                    // 한 분류에 많아야 26개(검색 시 최대 119개)라 전부 그려도
+                    // 부담이 없으므로 지연 생성의 이점보다 안정성을 택합니다.
+                    VStack(alignment: .leading, spacing: 0) {
                         ForEach(visible) { item in
                             SettingRow(item: item,
                                        pending: controller.pendingSettings[item.key],
