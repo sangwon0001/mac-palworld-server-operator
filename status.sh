@@ -90,9 +90,11 @@ case "${1:-}" in
     [[ -n "$ip"   ]] && printf '  같은 공유기 안 : %s%s:%s%s\n' "$_c_grn" "$ip" "$GAME_PORT" "$_c_reset"
     [[ -n "$host" ]] && printf '  같은 공유기 안 : %s%s:%s%s  (IP 가 바뀌어도 유지됨)\n' \
                         "$_c_grn" "$host" "$GAME_PORT" "$_c_reset"
-    printf '  외부(인터넷)   : 공인 IP 조회 중...'
+    # 진행 표시는 터미널일 때만. 파이프/로그로 넘어가면 \r 이 지워지지 않아
+    # 출력이 지저분해집니다.
+    if [[ -t 1 ]]; then printf '  외부(인터넷)   : 공인 IP 조회 중...'; fi
     pub="$(public_ip || true)"
-    printf '\r%*s\r' 60 ''          # 진행 표시를 완전히 지웁니다
+    if [[ -t 1 ]]; then printf '\r%*s\r' 60 ''; fi
     if [[ -n "$pub" ]]; then
       printf '  외부(인터넷)   : %s%s:%s%s\n' "$_c_grn" "$pub" "$GAME_PORT" "$_c_reset"
       printf '                   %s공유기에서 UDP %s 포트포워딩이 되어 있어야 합니다%s\n' \
