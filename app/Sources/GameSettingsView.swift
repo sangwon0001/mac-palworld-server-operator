@@ -11,6 +11,7 @@ struct GameSettingsView: View {
     @State private var category: SettingMeta.Category = .server
     @State private var search: String = ""
     @State private var showApplyConfirm = false
+    @State private var showResetAllConfirm = false
 
     var body: some View {
         // [주의] 여기서 HSplitView 를 쓰면 안 됩니다.
@@ -32,6 +33,22 @@ struct GameSettingsView: View {
             Button("취소", role: .cancel) { }
         } message: {
             Text(applySummary)
+        }
+        .confirmationDialog("운영 항목까지 전부 기본값으로 되돌릴까요?",
+                            isPresented: $showResetAllConfirm, titleVisibility: .visible) {
+            Button("전부 되돌리기", role: .destructive) {
+                controller.resetAllToDefaults(includeOperational: true)
+            }
+            Button("취소", role: .cancel) { }
+        } message: {
+            Text("""
+            관리자 비밀번호가 지워지고 RCON 이 꺼집니다. 그러면 안전 종료가 \
+            시그널 방식으로 바뀌어 세이브가 유실될 위험이 생기고, 서버 이름과 \
+            포트 설정도 초기화됩니다.
+
+            변경분은 [적용] 을 누르기 전까지 파일에 쓰이지 않으므로 \
+            [되돌리기] 로 취소할 수 있습니다.
+            """)
         }
     }
 
@@ -86,7 +103,8 @@ struct GameSettingsView: View {
                         ForEach(visible) { item in
                             SettingRow(item: item,
                                        pending: controller.pendingSettings[item.key],
-                                       onChange: { controller.stageSetting(item.key, $0) })
+                                       onChange: { controller.stageSetting(item.key, $0) },
+                                       onReset: { controller.resetToDefault(item.key) })
                             Divider()
                         }
                     }
@@ -109,6 +127,25 @@ struct GameSettingsView: View {
                     .buttonStyle(.borderless).foregroundStyle(.secondary)
             }
             Divider().frame(height: 16)
+
+            Menu {
+                Button("게임플레이 값만 기본값으로 (\(controller.modifiedGameplayCount)개)") {
+                    controller.resetAllToDefaults()
+                }
+                .disabled(controller.modifiedGameplayCount == 0)
+
+                Divider()
+
+                Button("운영 항목까지 전부 기본값으로…", role: .destructive) {
+                    showResetAllConfirm = true
+                }
+            } label: {
+                Label("기본값 복구", systemImage: "arrow.uturn.backward")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("기본값과 다른 항목을 되돌립니다 (적용 전까지 취소 가능)")
+
             Button {
                 Task { await controller.loadSettings() }
             } label: {
@@ -175,10 +212,17 @@ private struct SettingRow: View {
     let item: GameSetting
     let pending: String?
     let onChange: (String) -> Void
+    let onReset: () -> Void
 
     private var meta: SettingMeta { SettingsCatalog.meta(for: item.key) }
     private var current: String { pending ?? item.value }
     private var isDirty: Bool { pending != nil }
+
+    /// 지금 값이 기본값과 다른가 (편집 중인 값 기준).
+    private var differsFromDefault: Bool {
+        guard let def = item.defaultValue else { return false }
+        return def != current
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -197,6 +241,19 @@ private struct SettingRow: View {
                 if let help = meta.help {
                     Text(help).font(.caption2).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // 기본값과 다를 때만 되돌리기 버튼을 보여 줍니다.
+                if differsFromDefault, let def = item.defaultValue {
+                    Button {
+                        onReset()
+                    } label: {
+                        Label("기본값 \(def.isEmpty ? "(빈값)" : def) 으로",
+                              systemImage: "arrow.uturn.backward")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.link)
+                    .padding(.top, 1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

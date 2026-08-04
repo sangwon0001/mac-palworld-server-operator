@@ -228,4 +228,13 @@ enum SettingsCatalog {
     static func meta(for key: String) -> SettingMeta {
         meta[key] ?? SettingMeta(label: key, category: .other)
     }
+
+    /// 기본값으로 되돌리면 접속·관리가 끊기는 항목들.
+    /// 일괄 복구에서는 제외하고, 개별 복구는 사용자가 명시했으므로 허용합니다.
+    /// (settings.sh 의 OPERATIONAL_KEYS 와 같은 목록을 유지해야 합니다.)
+    static let operationalKeys: Set<String> = [
+        "AdminPassword", "ServerPassword", "ServerName", "ServerDescription",
+        "RCONEnabled", "RCONPort", "RESTAPIEnabled", "RESTAPIPort",
+        "PublicPort", "PublicIP", "Region", "BanListURL",
+    ]
 }

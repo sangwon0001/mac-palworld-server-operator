@@ -355,7 +355,26 @@ CLI로도 같은 작업을 할 수 있습니다.
 ./settings.sh --get ExpRate             # 값 하나 조회
 ./settings.sh --diff                    # 기본값과 다른 항목만 표시
 ./settings.sh --set ExpRate=2.0 Difficulty=Casual ServerName="내 서버"
+./settings.sh --reset                   # 게임플레이 값만 기본값 복구
+./settings.sh --reset ExpRate Difficulty  # 지정한 항목만 복구
+./settings.sh --reset --all             # 운영 항목까지 전부 복구 (주의)
 ```
+
+### 기본값 복구
+
+`DefaultPalWorldSettings.ini`(Pocketpair 배포 원본)를 기준으로 되돌립니다.
+
+**`--reset` 은 운영 항목을 건드리지 않습니다.** `AdminPassword` 가 지워지고
+`RCONEnabled` 가 `False` 로 돌아가면 안전 종료가 시그널 방식으로 떨어져 세이브
+유실 위험이 생기기 때문입니다. 보호 대상은 `AdminPassword`, `ServerPassword`,
+`ServerName`, `ServerDescription`, `RCONEnabled`, `RCONPort`, `RESTAPIEnabled`,
+`RESTAPIPort`, `PublicPort`, `PublicIP`, `Region`, `BanListURL` 입니다.
+보호된 항목이 있으면 무엇이 남았는지 알려 주고, `--reset --all` 로 강제할 수
+있습니다. 항목명을 직접 지정하면 운영 항목이라도 되돌립니다.
+
+앱에서는 **게임 설정 탭 → [기본값 복구]** 메뉴로 같은 일을 하고, 기본값과 다른
+항목에는 줄마다 되돌리기 링크가 붙습니다. 어느 쪽이든 **[적용] 을 누르기 전까지는
+파일에 쓰이지 않으므로** 취소할 수 있습니다.
 
 > **안전 설계**: 설정 파일 전체를 다시 쓰지 않고 **요청받은 키만 정밀 치환**합니다.
 > 전체 재직렬화 방식은 게임 업데이트로 새 항목이 추가됐을 때 우리가 모르는 값을

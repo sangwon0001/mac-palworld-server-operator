@@ -253,6 +253,41 @@ final class ServerController: ObservableObject {
 
     func discardPendingSettings() { pendingSettings.removeAll() }
 
+    /// 항목 하나를 기본값으로 되돌립니다.
+    /// 즉시 파일에 쓰지 않고 '변경분'에만 담아, [적용] 전까지 취소할 수 있게 합니다.
+    func resetToDefault(_ key: String) {
+        guard let item = settings.first(where: { $0.key == key }),
+              let def = item.defaultValue else { return }
+        stageSetting(key, def)
+    }
+
+    /// 기본값과 다른 항목을 한꺼번에 되돌립니다.
+    /// - Parameter includeOperational: true 면 AdminPassword·RCONEnabled 같은
+    ///   운영 항목까지 포함합니다. 되돌리면 안전 종료가 시그널 방식으로 떨어져
+    ///   세이브 유실 위험이 생기므로 기본값은 false 입니다.
+    /// - Returns: 되돌릴 항목 수
+    @discardableResult
+    func resetAllToDefaults(includeOperational: Bool = false) -> Int {
+        var count = 0
+        for item in settings {
+            guard let def = item.defaultValue, def != item.value else { continue }
+            if !includeOperational && SettingsCatalog.operationalKeys.contains(item.key) {
+                continue
+            }
+            stageSetting(item.key, def)
+            count += 1
+        }
+        return count
+    }
+
+    /// 기본값과 다른 항목 수 (운영 항목 제외).
+    var modifiedGameplayCount: Int {
+        settings.filter {
+            guard let def = $0.defaultValue else { return false }
+            return def != $0.value && !SettingsCatalog.operationalKeys.contains($0.key)
+        }.count
+    }
+
     func applySettings() {
         guard !pendingSettings.isEmpty else { return }
         // settings.sh 가 Key=Value 인자를 받아 '요청한 키만' 정밀 치환합니다.
