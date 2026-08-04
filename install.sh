@@ -246,8 +246,10 @@ $c_bold다음으로 할 만한 것$c_rst
       open -e "$SETTINGS_INI"
   · 정기 백업 + 자동 재시작 등록 (메모리 누수 대응)
       ./install_cron.sh --install
+  · 접속 주소 확인 (내부망 · 외부 모두)
+      ./status.sh --address
+      같은 공유기 안: $(lan_ip 2>/dev/null || echo '확인 불가'):$GAME_PORT
   · 외부 접속을 받으려면 공유기에서 UDP $GAME_PORT 포트포워딩
-      내부 IP: $(ipconfig getifaddr en0 2>/dev/null || echo '확인 불가')
 
 $c_dim자세한 내용은 README.md 를 참고하세요.$c_rst
 EOF

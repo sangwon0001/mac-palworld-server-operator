@@ -24,6 +24,11 @@ final class ServerController: ObservableObject {
     /// 마지막 RCON 오류. 접속자 목록이 비는 이유를 UI 에서 알려 주기 위함입니다.
     @Published private(set) var rconError: String?
 
+    /// 공인 IP. 외부 서비스에 요청이 나가므로 자동 조회하지 않고,
+    /// 사용자가 버튼을 눌렀을 때만 가져옵니다.
+    @Published private(set) var publicIP: String?
+    @Published private(set) var isFetchingPublicIP = false
+
     private let rcon = RconClient()
     private var rconReady = false
     @Published var scriptsDirectory: String {
@@ -82,6 +87,29 @@ final class ServerController: ObservableObject {
 
         await refreshPlayers()
         await loadBackups()
+    }
+
+    // MARK: - 접속 주소
+
+    /// 공인 IP 를 조회합니다. 외부(api.ipify.org)로 요청이 나가므로
+    /// 폴링에 섞지 않고 사용자가 명시적으로 요청할 때만 호출합니다.
+    func fetchPublicIP() {
+        guard !isFetchingPublicIP else { return }
+        isFetchingPublicIP = true
+        Task {
+            defer { isFetchingPublicIP = false }
+            guard let url = URL(string: "https://api.ipify.org") else { return }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 6
+            if let (data, _) = try? await URLSession.shared.data(for: request),
+               let ip = String(data: data, encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+               !ip.isEmpty {
+                publicIP = ip
+            } else {
+                append("‼️ 공인 IP 조회 실패 — 네트워크를 확인하세요.")
+            }
+        }
     }
 
     // MARK: - RCON

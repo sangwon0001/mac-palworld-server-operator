@@ -73,12 +73,34 @@ emit_json() {
   printf '"backupCount":%s,'  "${backup_count:-0}"
   printf '"gamePort":%s,'     "$GAME_PORT"
   printf '"rconPort":%s,'     "$RCON_PORT"
+  # 접속 주소. 공인 IP 는 외부 요청이 나가므로 여기 포함하지 않습니다
+  # (--public-ip 로 명시적으로 조회하세요).
+  printf '"lanIP":"%s",'      "$(lan_ip || true)"
+  printf '"localHostname":"%s",' "$(local_hostname || true)"
   printf '"rconConfigured":%s' "$([[ -n "$RCON_PASSWORD" ]] && echo true || echo false)"
   printf '}\n'
 }
 
 case "${1:-}" in
   --json) emit_json "${2:-}"; exit 0 ;;
+  --address|--ip)
+    # 지인들에게 알려 줄 접속 주소를 한눈에.
+    info "접속 주소"
+    ip="$(lan_ip || true)"; host="$(local_hostname || true)"
+    [[ -n "$ip"   ]] && printf '  같은 공유기 안 : %s%s:%s%s\n' "$_c_grn" "$ip" "$GAME_PORT" "$_c_reset"
+    [[ -n "$host" ]] && printf '  같은 공유기 안 : %s%s:%s%s  (IP 가 바뀌어도 유지됨)\n' \
+                        "$_c_grn" "$host" "$GAME_PORT" "$_c_reset"
+    printf '  외부(인터넷)   : 공인 IP 조회 중...'
+    pub="$(public_ip || true)"
+    printf '\r%*s\r' 60 ''          # 진행 표시를 완전히 지웁니다
+    if [[ -n "$pub" ]]; then
+      printf '  외부(인터넷)   : %s%s:%s%s\n' "$_c_grn" "$pub" "$GAME_PORT" "$_c_reset"
+      printf '                   %s공유기에서 UDP %s 포트포워딩이 되어 있어야 합니다%s\n' \
+             "$_c_dim" "$GAME_PORT" "$_c_reset"
+    else
+      printf '  외부(인터넷)   : 공인 IP 조회 실패 (네트워크 확인)          \n'
+    fi
+    exit 0 ;;
   --watch)
     command -v watch >/dev/null 2>&1 \
       && exec watch -n5 --color "$PWD/status.sh" \
@@ -87,7 +109,7 @@ case "${1:-}" in
     [[ -f "$SERVER_LOG" ]] || die "로그 파일이 없습니다: $SERVER_LOG"
     exec tail -f "$SERVER_LOG" ;;
   "") ;;
-  *) die "알 수 없는 옵션: $1 (--watch | --log)" ;;
+  *) die "알 수 없는 옵션: $1 (--watch | --log | --address | --json)" ;;
 esac
 
 hr() { printf '%s\n' "════════════════════════════════════════════════════════════"; }
@@ -160,6 +182,16 @@ if lsof -nP -iTCP:"$RCON_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   printf '  %s✔%s TCP %s  RCON 대기 중\n' "$_c_grn" "$_c_reset" "$RCON_PORT"
 else
   printf '  %s·%s TCP %s  RCON 비활성 (PalWorldSettings.ini 의 RCONEnabled 확인)\n' "$_c_dim" "$_c_reset" "$RCON_PORT"
+fi
+
+# 접속 주소 — 지인들에게 그대로 불러 줄 수 있게 표시합니다.
+# 공인 IP 는 외부 요청이 나가므로 여기서는 조회하지 않습니다 (./status.sh --address).
+_lan="$(lan_ip || true)"; _host="$(local_hostname || true)"
+if [[ -n "$_lan" || -n "$_host" ]]; then
+  echo
+  [[ -n "$_lan"  ]] && row "접속 주소" "$_lan:$GAME_PORT"
+  [[ -n "$_host" ]] && row ""         "$_host:$GAME_PORT"
+  printf '      %s외부 접속 주소는 ./status.sh --address%s\n' "$_c_dim" "$_c_reset"
 fi
 
 # ------------------------------------------------------- RCON 으로 접속자 조회

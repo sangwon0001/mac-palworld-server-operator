@@ -91,6 +91,38 @@ audit() {
 
 ensure_dirs() { mkdir -p "$PAL_ROOT" "$BACKUP_DIR" "$LOG_DIR" "$RUN_DIR"; }
 
+# --- 접속 주소 ---------------------------------------------------------------
+# 내부망 IP. en0 을 하드코딩하면 유선/무선 구성에 따라 빗나가므로,
+# 기본 경로가 실제로 쓰는 인터페이스를 먼저 물어봅니다.
+lan_ip() {
+  local iface ip
+  iface="$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')"
+  if [[ -n "$iface" ]]; then
+    ip="$(ipconfig getifaddr "$iface" 2>/dev/null)"
+    [[ -n "$ip" ]] && { printf '%s' "$ip"; return 0; }
+  fi
+  # 폴백: IPv4 가 붙어 있는 첫 인터페이스
+  for iface in $(ifconfig -l 2>/dev/null); do
+    ip="$(ipconfig getifaddr "$iface" 2>/dev/null)"
+    [[ -n "$ip" ]] && { printf '%s' "$ip"; return 0; }
+  done
+  return 1
+}
+
+# mDNS 호스트명(.local). DHCP 로 IP 가 바뀌어도 같은 망에서는 계속 통하므로
+# 지인들에게 알려 주기에는 IP 보다 안정적입니다.
+local_hostname() {
+  local h
+  h="$(scutil --get LocalHostName 2>/dev/null)"
+  [[ -n "$h" ]] && printf '%s.local' "$h"
+}
+
+# 공인 IP. 외부 서비스에 요청이 나가므로 자동 조회하지 않고,
+# 사용자가 명시적으로 요청할 때만 호출합니다.
+public_ip() {
+  curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null
+}
+
 # --- Wine 자동 탐색 -----------------------------------------------------------
 detect_wine() {
   if [[ -n "$WINE_BIN" ]]; then

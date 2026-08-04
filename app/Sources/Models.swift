@@ -19,13 +19,21 @@ struct ServerStatus: Codable, Equatable {
     var backupCount: Int
     var gamePort: Int
     var rconPort: Int
+    var lanIP: String
+    var localHostname: String
     var rconConfigured: Bool
+
+    /// 같은 공유기 안에서 쓰는 접속 주소.
+    var lanAddress: String? { lanIP.isEmpty ? nil : "\(lanIP):\(gamePort)" }
+    /// mDNS 이름. DHCP 로 IP 가 바뀌어도 같은 망에서는 계속 통합니다.
+    var hostnameAddress: String? { localHostname.isEmpty ? nil : "\(localHostname):\(gamePort)" }
 
     static let unknown = ServerStatus(
         running: false, pid: 0, cpuPercent: 0, memoryMB: 0, uptime: "",
         portBound: false, rconListening: false, playerCount: 0, players: [],
         saveBytes: 0, worlds: [], latestBackup: "", backupCount: 0,
-        gamePort: 8211, rconPort: 25575, rconConfigured: false
+        gamePort: 8211, rconPort: 25575, lanIP: "", localHostname: "",
+        rconConfigured: false
     )
 
     /// 팰월드 서버는 장시간 가동 시 RSS 가 계속 증가합니다.

@@ -37,6 +37,7 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         metrics
+                        addressSection
                         actions
                         playersSection
                         backupsSection
@@ -162,6 +163,66 @@ struct ContentView: View {
         case .elevated: return "누수 진행 가능"
         case .critical: return "재시작 권장"
         }
+    }
+
+    // MARK: - 접속 주소
+
+    private var addressSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle("접속 주소")
+
+            VStack(spacing: 0) {
+                if let lan = controller.status.lanAddress {
+                    AddressRow(label: "같은 공유기 안", address: lan, note: nil)
+                    Divider()
+                }
+                if let host = controller.status.hostnameAddress {
+                    AddressRow(label: "같은 공유기 안", address: host,
+                               note: "IP 가 바뀌어도 계속 통합니다")
+                    Divider()
+                }
+
+                // 공인 IP 는 외부 서비스에 요청이 나가므로 누를 때만 조회합니다.
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("외부 (인터넷)").font(.caption).foregroundStyle(.secondary)
+                        if let pub = controller.publicIP {
+                            Text("\(pub):\(controller.status.gamePort)")
+                                .font(.system(.callout, design: .monospaced))
+                                .textSelection(.enabled)
+                            Text("공유기에서 UDP \(controller.status.gamePort) 포트포워딩이 되어 있어야 합니다")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        } else {
+                            Text("아직 조회하지 않음")
+                                .font(.callout).foregroundStyle(.tertiary)
+                        }
+                    }
+                    Spacer()
+                    if controller.isFetchingPublicIP {
+                        ProgressView().controlSize(.small)
+                    } else if let pub = controller.publicIP {
+                        Button("복사") { copy("\(pub):\(controller.status.gamePort)") }
+                            .buttonStyle(.bordered).controlSize(.small)
+                    } else {
+                        Button("공인 IP 조회") { controller.fetchPublicIP() }
+                            .buttonStyle(.bordered).controlSize(.small)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .padding(.horizontal, 12)
+            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+
+            if !controller.status.portBound {
+                Text("서버가 꺼져 있어 지금은 접속할 수 없습니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     // MARK: - 동작 버튼
@@ -424,6 +485,42 @@ private struct SectionTitle: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(text).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+    }
+}
+
+/// 접속 주소 한 줄 — 주소를 그대로 보여 주고 복사 버튼을 답니다.
+private struct AddressRow: View {
+    let label: String
+    let address: String
+    let note: String?
+
+    @State private var copied = false
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).font(.caption).foregroundStyle(.secondary)
+                Text(address)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                if let note {
+                    Text(note).font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            Spacer()
+            Button(copied ? "복사됨" : "복사") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(address, forType: .string)
+                copied = true
+                Task {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    copied = false
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(.vertical, 8)
     }
 }
 
