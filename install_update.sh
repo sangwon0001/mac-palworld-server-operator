@@ -16,6 +16,7 @@ VALIDATE=""
 [[ "${1:-}" == "--validate" ]] && VALIDATE="validate"
 
 ensure_dirs
+acquire_lock "server update"
 
 # ------------------------------------------------------------- Locate steamcmd
 if [[ -x "$STEAMCMD_DIR/steamcmd.sh" ]]; then

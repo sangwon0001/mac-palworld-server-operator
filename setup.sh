@@ -19,22 +19,22 @@ info "Checking your environment"
 hr
 
 # ------------------------------------------------------------ 1. CPU architecture
+# Apple Silicon only. Nothing here was ever tested on Intel, and app/build.sh
+# targets arm64, so an Intel machine would get a GUI app it cannot launch.
 arch="$(uname -m)"
 if [[ "$arch" == "arm64" ]]; then
   ok "Apple Silicon (arm64)"
 else
-  warn "Not arm64 ($arch). On an Intel Mac you can skip the Rosetta step."
+  die "Apple Silicon (arm64) only — this Mac reports '$arch'."
 fi
 
 # --------------------------------------------------------------- 2. Rosetta 2
 # steamcmd and most Wine builds are x86_64, so Rosetta 2 is required.
-if [[ "$arch" == "arm64" ]]; then
-  if /usr/bin/pgrep -q oahd || [[ -d /Library/Apple/usr/libexec/oah ]]; then
-    ok "Rosetta 2 installed"
-  else
-    warn "Rosetta 2 not installed"
-    missing+=("rosetta")
-  fi
+if /usr/bin/pgrep -q oahd || [[ -d /Library/Apple/usr/libexec/oah ]]; then
+  ok "Rosetta 2 installed"
+else
+  warn "Rosetta 2 not installed"
+  missing+=("rosetta")
 fi
 
 # --------------------------------------------------------------- 3. Homebrew

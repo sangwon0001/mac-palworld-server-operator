@@ -20,7 +20,6 @@
 # ==============================================================================
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
-INSTALL_DIR="$PWD"
 
 ASSUME_YES=0
 BUILD_APP=1
@@ -61,6 +60,10 @@ printf '%s║   Palworld Dedicated Server installer (macOS / Apple Silicon)  ║
 printf '%s╚════════════════════════════════════════════════════════════════╝%s\n' "$c_bold" "$c_rst"
 
 [[ "$(uname -s)" == "Darwin" ]] || die "macOS only."
+# Apple Silicon only: app/build.sh targets arm64, so on Intel step 7 would
+# produce a GUI app the machine cannot run. Better to say so before downloading
+# 5.6GB of server files.
+[[ "$(uname -m)" == "arm64" ]] || die "Apple Silicon (arm64) only — this Mac reports '$(uname -m)'."
 
 # --- Is python3 actually runnable? (Command Line Tools) ----------------------
 # On a fresh Mac /usr/bin/python3 exists as a file but is a stub: running it only
@@ -119,9 +122,7 @@ done
 
 # ============================================================ 1. Rosetta 2
 step 1 "Checking Rosetta 2"
-if [[ "$(uname -m)" != "arm64" ]]; then
-  ok "Intel Mac — Rosetta not needed"
-elif /usr/bin/pgrep -q oahd || [[ -d /Library/Apple/usr/libexec/oah ]]; then
+if /usr/bin/pgrep -q oahd || [[ -d /Library/Apple/usr/libexec/oah ]]; then
   skip "Rosetta 2"
 else
   warn "Rosetta 2 is required (Wine and the Windows server binary both need it)."

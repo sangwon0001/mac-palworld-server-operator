@@ -19,7 +19,7 @@
 #     ./update_check.sh --cached     # cache/manifest only, no network (instant)
 # ==============================================================================
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 source ./config.sh
 
 CACHE_TTL="${UPDATE_CACHE_TTL:-3600}"      # seconds

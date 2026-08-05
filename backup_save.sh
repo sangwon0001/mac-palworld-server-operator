@@ -58,12 +58,20 @@ backup_stamp() {
 }
 
 # Find exactly one backup, given a full filename or part of the timestamp.
+# Matching walks the glob and compares basenames rather than piping ls into grep:
+# a name is arbitrary user text, and matching against the full path would also
+# hit anything that happened to appear in BACKUP_DIR itself.
 find_backup() {
-  local want="$1" hit
+  local want="$1" hit="" f count=0
   [[ -f "$want" ]] && { printf '%s' "$want"; return 0; }
   [[ -f "$BACKUP_DIR/$want" ]] && { printf '%s' "$BACKUP_DIR/$want"; return 0; }
-  hit="$(ls -1 "$BACKUP_DIR"/${BACKUP_PREFIX}*.tar.gz 2>/dev/null | grep -F "$want" || true)"
-  [[ "$(printf '%s\n' "$hit" | grep -c .)" == "1" ]] || return 1
+  for f in "$BACKUP_DIR/${BACKUP_PREFIX}"*.tar.gz; do
+    [[ -f "$f" ]] || continue                      # unmatched glob stays literal
+    case "${f##*/}" in
+      *"$want"*) hit="$f"; count=$((count + 1)) ;;
+    esac
+  done
+  [[ $count -eq 1 ]] || return 1                   # ambiguous or nothing found
   printf '%s' "$hit"
 }
 
@@ -126,6 +134,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 ensure_dirs
+# Taken before the RCON flush: a restart that stops the server mid-archive would
+# otherwise produce a backup of a half-written save.
+acquire_lock "backup"
 
 [[ -d "$SAVEGAMES_DIR" ]] || die "Save folder not found: $SAVEGAMES_DIR
     (the server has never started, or PAL_ROOT is wrong)"
@@ -193,6 +204,37 @@ if [[ $PRUNE -eq 1 ]]; then
     fi
   done < <(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}*.tar.gz 2>/dev/null | tail -n +$((BACKUP_RETENTION_MIN + 1)))
   [[ $deleted -gt 0 ]] && ok "Deleted ${deleted} old backups (older than ${BACKUP_RETENTION_DAYS}d, newest ${BACKUP_RETENTION_MIN} always kept)"
+  [[ $kept_named -gt 0 ]] && info "Kept ${kept_named} named backups regardless of age"
+
+  # --- Everything else that grows without limit ------------------------------
+  # These are not palworld_backup_* files, so the loop above never saw them, and
+  # nothing else ever deleted them. On a server that has run for months they are
+  # the largest thing in the folder after the backups themselves.
+
+  # restore_save.sh snapshots the current save before every restore. Useful for
+  # undoing a wrong restore, worthless a fortnight later — same retention as a
+  # backup, but with a smaller floor since they are whole-Saved archives.
+  pre_deleted=0
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if [[ -n "$(find "$f" -mtime +"$BACKUP_RETENTION_DAYS" 2>/dev/null)" ]]; then
+      rm -f "$f" && pre_deleted=$((pre_deleted + 1))
+    fi
+  done < <(ls -1t "$BACKUP_DIR"/prerestore_*.tar.gz 2>/dev/null | tail -n +$((PRERESTORE_RETENTION_MIN + 1)))
+  [[ $pre_deleted -gt 0 ]] && ok "Deleted ${pre_deleted} old pre-restore snapshots"
+
+  # settings.sh copies the ini aside on every single write, so editing settings a
+  # few dozen times leaves a few dozen files next to the live config. They are
+  # small, so cap the count rather than the age.
+  ini_deleted=0
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    rm -f "$f" && ini_deleted=$((ini_deleted + 1))
+  done < <(ls -1t "$SETTINGS_INI".bak_* 2>/dev/null | tail -n +$((INI_BACKUP_KEEP + 1)))
+  [[ $ini_deleted -gt 0 ]] && ok "Deleted ${ini_deleted} old settings backups (newest ${INI_BACKUP_KEEP} kept)"
+
+  # cron writes here with >> and nothing rotates it.
+  trim_log "$LOG_DIR/cron.log"
 fi
 
 count="$(ls -1 "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"

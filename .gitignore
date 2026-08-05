@@ -1,31 +1,31 @@
 # ─────────────────────────────────────────────────────────────
-# 비밀 정보 — 절대 커밋하지 않습니다
+# Secrets — never commit these
 # ─────────────────────────────────────────────────────────────
-# RCON_PASSWORD(= 서버의 AdminPassword)가 들어 있습니다.
-# 새 환경에서는 config.local.sh.example 을 복사하거나
-# ./install.sh 가 자동 생성하게 두세요.
+# Holds RCON_PASSWORD (= the server's AdminPassword).
+# On a new machine, copy config.local.sh.example instead,
+# or let ./install.sh generate it for you.
 config.local.sh
 
 # ─────────────────────────────────────────────────────────────
-# 빌드 산출물
+# Build output
 # ─────────────────────────────────────────────────────────────
 app/build/
 *.app/
 
 # ─────────────────────────────────────────────────────────────
-# 실행 중 생성되는 것들
+# Produced at runtime
 # ─────────────────────────────────────────────────────────────
 logs/
 run/
 *.log
 *.pid
 
-# 설정 파일 수정 전 자동 백업 (settings.sh 가 남깁니다)
+# Automatic pre-edit copies of the settings file (left by settings.sh)
 *.bak_*
 *.orig
 
 # ─────────────────────────────────────────────────────────────
-# 도구 · OS
+# Tooling · OS
 # ─────────────────────────────────────────────────────────────
 .omc/
 .DS_Store

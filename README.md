@@ -65,7 +65,8 @@ virtualization, no Docker.
 
 ## Requirements
 
-- Apple Silicon Mac (Intel works but is untested here)
+- Apple Silicon Mac (Intel is not supported: the app builds arm64-only, and the
+  installer stops early on an Intel machine)
 - macOS 14 or newer
 - About 7 GB of free disk space
 - Xcode Command Line Tools and Homebrew (see below)
@@ -223,11 +224,14 @@ fixed-width date parsing keep working unchanged.
 ./stop_server.sh                        # required first
 ./restore_save.sh --latest              # roll back to the newest backup
 ./restore_save.sh <backup.tar.gz>       # roll back to a specific one
+./restore_save.sh --yes <backup.tar.gz> # same, without the confirmation prompt
 ./restore_save.sh --import ~/Downloads/Saved   # import from another server
 ```
 
 The current state is snapshotted as `prerestore_*.tar.gz` before anything is
-overwritten, so a wrong restore is still recoverable.
+overwritten, so a wrong restore is still recoverable. The newest three are kept;
+older ones are cleared out with the ordinary backups once they pass the retention
+period.
 
 > Keep the world ID folder name (a random hex string) exactly as it was — renaming it
 > makes the server treat it as a new world. If `SaveGames/0/` holds more than one world,
@@ -302,9 +306,16 @@ to return to.
 
 | When | What |
 |---|---|
-| hourly | back up the save |
+| hourly at :30 | back up the save |
 | daily 05:00 | back up and restart (clears the memory leak) |
 | daily 06:00 | restart only if memory exceeds 8 GB and nobody is connected |
+
+The hourly backup sits at :30 on purpose. `auto_restart.sh` takes a backup of its
+own before stopping the server, so on the hour it would collide with both daily
+jobs. Should two operations ever overlap anyway — a cron job and a click in the
+app, say — they take turns instead of interleaving: every script that touches the
+save takes a lock first, and the one that arrives second waits and says what it
+is waiting for.
 
 > **Required on macOS:** cron needs permission to reach your home directory.
 > System Settings → Privacy & Security → **Full Disk Access** → add `/usr/sbin/cron`.

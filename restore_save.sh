@@ -11,12 +11,26 @@
 #     ./restore_save.sh --latest                # restore the most recent backup
 #     ./restore_save.sh <backup.tar.gz>         # restore a specific backup
 #     ./restore_save.sh --import <path/to/Saved>  # import a foreign Saved folder
+#     ./restore_save.sh --yes <backup.tar.gz>   # skip the confirmation prompt
 # ==============================================================================
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./config.sh
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+# --yes is pulled out before the mode is decided, so it can be given on either
+# side of the filename. The app passes it instead of piping "y" into the prompt —
+# that coupled the GUI to the exact wording of a shell read.
+ASSUME_YES=0
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --yes|-y) ASSUME_YES=1 ;;
+    *)        ARGS+=("$a") ;;
+  esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 
 [[ $# -ge 1 ]] || usage 1
 
@@ -30,7 +44,8 @@ require_stopped() {
 # Snapshot the current state first, so a wrong restore can still be undone
 snapshot_current() {
   if [[ -d "$SAVEGAMES_DIR" ]] && [[ -n "$(ls -A "$SAVEGAMES_DIR" 2>/dev/null)" ]]; then
-    local snap="$BACKUP_DIR/prerestore_$(date '+%Y%m%d_%H%M%S').tar.gz"
+    local snap
+    snap="$BACKUP_DIR/prerestore_$(date '+%Y%m%d_%H%M%S').tar.gz"
     mkdir -p "$BACKUP_DIR"
     tar -czf "$snap" -C "$PAL_ROOT" "Pal/Saved" 2>/dev/null || true
     ok "Snapshot of the current state: $snap"
@@ -48,6 +63,7 @@ case "$1" in
   --latest)
     latest="$(ls -1t "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | head -n1 || true)"
     [[ -n "$latest" ]] || die "No backups to restore from: $BACKUP_DIR"
+    [[ $ASSUME_YES -eq 1 ]] && exec "$0" --yes "$latest"
     exec "$0" "$latest"
     ;;
 
@@ -68,6 +84,7 @@ case "$1" in
     info "Source saves: $SRC_SAVES"
     ls -1 "$SRC_SAVES" | while read -r w; do printf '    World ID: %s\n' "$w"; done
 
+    acquire_lock "import"
     snapshot_current
     mkdir -p "$SAVEGAMES_DIR" "$CONFIG_DIR"
 
@@ -107,10 +124,13 @@ case "$1" in
     tar -tzf "$ARCHIVE" | grep -E 'SaveGames/0/[^/]+/?$|PalWorldSettings\.ini$' \
       | sed 's/^/    /' | head -20
 
-    printf '\nThis overwrites the current save. Continue? [y/N] '
-    read -r answer
-    [[ "$answer" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 0; }
+    if [[ $ASSUME_YES -eq 0 ]]; then
+      printf '\nThis overwrites the current save. Continue? [y/N] '
+      read -r answer
+      [[ "$answer" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 0; }
+    fi
 
+    acquire_lock "restore"
     snapshot_current
     mkdir -p "$PAL_ROOT"
     tar -xzf "$ARCHIVE" -C "$PAL_ROOT" || die "Extraction failed"

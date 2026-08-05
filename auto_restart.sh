@@ -15,12 +15,17 @@
 #   (Options combine: ./auto_restart.sh --if-over 8192 --if-empty --update)
 # ==============================================================================
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+# No `set -e` here, so a failed cd would keep going and run the sibling scripts
+# from whatever directory cron happened to start in.
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 source ./config.sh
 
 ensure_dirs
 
 RESTART_LOG="$LOG_DIR/auto_restart.log"
+# Trim before tee opens the file: replacing it afterwards would leave tee writing
+# to the old, unlinked inode for the rest of the run.
+trim_log "$RESTART_LOG"
 # Send stdout/stderr to both the console and the log (cron only sees the log)
 exec > >(tee -a "$RESTART_LOG") 2>&1
 
@@ -39,6 +44,10 @@ done
 
 printf '\n'
 log "===== auto_restart begin (threshold=${MEM_THRESHOLD}MB, if-empty=${ONLY_IF_EMPTY}, update=${DO_UPDATE}) ====="
+
+# Held across the whole backup → stop → update → start sequence. The scripts
+# called below inherit it (PAL_LOCK_HELD) instead of deadlocking on it.
+acquire_lock "scheduled restart"
 
 # --------------------------------------------------------------- Preconditions
 pid="$(server_pid || server_pid_by_name || true)"

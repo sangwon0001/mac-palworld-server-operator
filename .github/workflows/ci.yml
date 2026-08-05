@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      # -x follows `source ./config.sh`, which is where the shared helpers live.
+      - name: shellcheck
+        run: shellcheck -x -S warning $(git ls-files '*.sh')
+
+  macos:
+    name: macOS build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      # cron on macOS runs /bin/bash, which is still 3.2. Parsing the scripts with
+      # that exact binary is the only way to catch bash 4+ syntax that would work
+      # everywhere except the scheduled jobs.
+      - name: Parse with bash 3.2 (/bin/bash)
+        run: |
+          /bin/bash --version | head -1
+          for f in $(git ls-files '*.sh'); do
+            /bin/bash -n "$f" || { echo "::error file=$f::parse failed under bash 3.2"; exit 1; }
+          done
+
+      # The app is built by hand with swiftc (no Xcode project), so the build
+      # script is the only thing that can tell us it still compiles.
+      - name: Build the app
+        run: ./app/build.sh
+
+      # Smoke test: status.sh must emit valid JSON on a machine with no server
+      # installed. The app decodes this, and a malformed field freezes its UI.
+      - name: status.sh --json is valid JSON
+        run: |
+          ./status.sh --json --no-rcon > /tmp/status.json
+          cat /tmp/status.json
+          python3 -c "import json; json.load(open('/tmp/status.json'))"

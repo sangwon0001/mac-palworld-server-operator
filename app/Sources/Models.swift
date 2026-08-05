@@ -17,12 +17,23 @@ struct ServerStatus: Codable, Equatable {
     var worlds: [String]
     var latestBackup: String
     var backupCount: Int
+    /// Optional so that a status.sh predating this field still decodes — a failed
+    /// decode would freeze every value on screen, not just this one.
+    var backupDir: String?
     var gamePort: Int
     var rconPort: Int
     var lanIP: String
     var localHostname: String
     var installedBuild: String
     var rconConfigured: Bool
+
+    /// Where backups actually live. BACKUP_DIR is overridable in config.local.sh,
+    /// so the app must not assume the default path — it would list an empty folder
+    /// while showing a non-zero backupCount from the real one.
+    var backupDirectoryPath: String {
+        let dir = backupDir ?? ""
+        return dir.isEmpty ? NSHomeDirectory() + "/palworld_backups" : dir
+    }
 
     /// Address for players on the same router.
     var lanAddress: String? { lanIP.isEmpty ? nil : "\(lanIP):\(gamePort)" }

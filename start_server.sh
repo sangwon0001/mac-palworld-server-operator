@@ -23,6 +23,9 @@ esac
 
 ensure_dirs
 require_wine
+# Held for the start sequence only. Blocks a backup or a cron restart from
+# running underneath a half-started server.
+acquire_lock "server start"
 
 # --------------------------------------------------------- Prevent double start
 # Running the same server twice makes the two instances overwrite each other's
@@ -77,6 +80,10 @@ case "$MODE" in
   fg)
     cd "$WORKDIR"
     audit "start (foreground)"
+    # exec replaces this shell, so the EXIT trap never fires — the lock has to go
+    # now. Otherwise a foreground server would hold it for its whole lifetime and
+    # block every backup.
+    release_lock
     exec "${launch_cmd[@]}" 2>&1 | tee "$SERVER_LOG"
     ;;
 
@@ -158,7 +165,7 @@ fi
 # ------------------------------------------------------- Wait for the port
 # UE5 servers can take tens of seconds to load the world, so allow generous time.
 info "Waiting for UDP $GAME_PORT to bind (up to 120s)..."
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   if lsof -nP -iUDP:"$GAME_PORT" >/dev/null 2>&1; then
     ok "UDP $GAME_PORT is bound. The server is ready for connections."
     exit 0

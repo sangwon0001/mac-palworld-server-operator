@@ -18,12 +18,19 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./config.sh
 
 FORCE=0; DELAY="$RCON_SHUTDOWN_DELAY"
-case "${1:-}" in
-  --now)   DELAY=1 ;;
-  --force) FORCE=1 ;;
-  "")      ;;
-  *)       die "Unknown option: $1 (--now | --force)" ;;
-esac
+# A loop rather than a single case: --now and --force are independent choices,
+# and "stop right now, and force it if it hangs" is the combination you reach for
+# when a server is misbehaving.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --now)   DELAY=1; shift ;;
+    --force) FORCE=1; shift ;;
+    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)       die "Unknown option: $1 (--now | --force)" ;;
+  esac
+done
+
+acquire_lock "server stop"
 
 # ------------------------------------------------------------ Resolve target PID
 pid="$(server_pid || true)"

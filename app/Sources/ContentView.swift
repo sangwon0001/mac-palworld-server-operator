@@ -484,7 +484,7 @@ struct ContentView: View {
                 Spacer()
                 Button(t("폴더 열기")) {
                     NSWorkspace.shared.open(
-                        URL(fileURLWithPath: NSHomeDirectory() + "/palworld_backups"))
+                        URL(fileURLWithPath: controller.status.backupDirectoryPath))
                 }
                 .buttonStyle(.link)
                 .font(.caption)

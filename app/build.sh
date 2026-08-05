@@ -36,6 +36,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 info "Compiling..."
 # -parse-as-library: required to use @main when the file isn't named main.swift.
 # -swift-version 5 : avoids Swift 6 strict concurrency checking, keeping the build simple.
+# -target arm64    : Apple Silicon only, matching what install.sh and setup.sh enforce.
 swiftc \
   -O \
   -parse-as-library \

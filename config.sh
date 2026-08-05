@@ -4,6 +4,11 @@
 #   Loaded via `source config.sh`; not meant to be run on its own.
 #   For personal settings, create config.local.sh instead of editing this file.
 # ==============================================================================
+# Everything here exists to be read by the scripts that source this file, so the
+# linter cannot see the uses and reports every definition as dead.
+# (Careful: a comment line starting with the linter's name is parsed as a
+# directive, so that word must not begin a line here.)
+# shellcheck disable=SC2034
 
 # ------------------------------------------------------------------ Paths
 PAL_ROOT="${PAL_ROOT:-$HOME/PalworldServer}"        # where the server itself lives
@@ -64,6 +69,11 @@ RCON_SHUTDOWN_DELAY="${RCON_SHUTDOWN_DELAY:-30}"   # seconds of shutdown warning
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"  # delete backups older than this
 BACKUP_RETENTION_MIN="${BACKUP_RETENTION_MIN:-10}"    # but always keep at least this many
 
+# Housekeeping for the files nothing else cleans up. backup_save.sh applies these
+# on every run, since it is the one script that goes round on a schedule.
+PRERESTORE_RETENTION_MIN="${PRERESTORE_RETENTION_MIN:-3}"  # pre-restore snapshots to keep
+INI_BACKUP_KEEP="${INI_BACKUP_KEEP:-10}"                   # PalWorldSettings.ini.bak_* to keep
+
 # --------------------------------------------------- Derived paths (do not edit)
 PAL_EXE_LAUNCHER="$PAL_ROOT/PalServer.exe"
 PAL_EXE_SHIPPING="$PAL_ROOT/Pal/Binaries/Win64/PalServer-Win64-Shipping.exe"
@@ -88,9 +98,84 @@ die()   { printf '%s ✘%s  %s\n'  "$_c_red" "$_c_reset" "$*" >&2; exit 1; }
 audit() {
   mkdir -p "$LOG_DIR"
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$OPS_LOG"
+  trim_log "$OPS_LOG"
 }
 
 ensure_dirs() { mkdir -p "$PAL_ROOT" "$BACKUP_DIR" "$LOG_DIR" "$RUN_DIR"; }
+
+# --- Append-only log trimming ------------------------------------------------
+# operations.log, auto_restart.log and cron.log are appended to forever, so on a
+# long-lived server they grow without limit. Rotating them on a schedule needs a
+# scheduler; keeping the tail is enough for logs nobody reads in full.
+LOG_MAX_BYTES="${LOG_MAX_BYTES:-2097152}"   # 2 MB
+LOG_KEEP_LINES="${LOG_KEEP_LINES:-2000}"
+trim_log() {
+  local f="$1" size
+  [[ -f "$f" ]] || return 0
+  size="$(stat -f %z "$f" 2>/dev/null || echo 0)"
+  [[ "$size" -gt "$LOG_MAX_BYTES" ]] || return 0
+  # Rewrite in place rather than mv'ing a new file over it. cron and tee hold
+  # these logs open with O_APPEND for the length of a run; replacing the file
+  # would leave them writing to an unlinked inode and lose the rest of that run.
+  if tail -n "$LOG_KEEP_LINES" "$f" > "$f.trim" 2>/dev/null; then
+    cat "$f.trim" > "$f" && rm -f "$f.trim"
+  fi
+}
+
+# --- Single-writer lock ------------------------------------------------------
+# Start, stop, backup, restore and update all move the same save files around,
+# and there are three ways to trigger them at once (the app, cron and a
+# terminal). macOS ships no flock(1), so the lock is a directory: mkdir is
+# atomic, and the owning PID inside it lets a stale lock be recognised.
+#
+# Re-entrant across scripts: auto_restart.sh calls backup/stop/start, and each
+# would otherwise deadlock on the lock its own parent holds. The holder exports
+# PAL_LOCK_HELD, so child scripts see it and skip straight through.
+LOCK_DIR="${LOCK_DIR:-$RUN_DIR/ops.lock}"
+LOCK_WAIT="${LOCK_WAIT:-300}"          # seconds to wait for a busy lock
+
+release_lock() {
+  # Only the process that took the lock may drop it.
+  [[ "${PAL_LOCK_HELD:-}" == "$$" ]] || return 0
+  rm -rf "$LOCK_DIR"
+  unset PAL_LOCK_HELD
+}
+
+# Usage: acquire_lock "backup"   (dies if another operation holds it too long)
+acquire_lock() {
+  local label="${1:-operation}" waited=0 owner owner_pid owner_label
+  [[ -n "${PAL_LOCK_HELD:-}" ]] && return 0     # inherited from the parent script
+
+  mkdir -p "$RUN_DIR"
+  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    owner="$(cat "$LOCK_DIR/owner" 2>/dev/null || true)"
+    # mkdir and writing owner are two steps: an empty file may simply mean the
+    # winner has not written it yet. Give it a moment before calling it stale,
+    # or two simultaneous starts would delete each other's lock.
+    if [[ -z "$owner" ]]; then
+      sleep 1
+      owner="$(cat "$LOCK_DIR/owner" 2>/dev/null || true)"
+    fi
+    owner_pid="${owner%% *}"; owner_label="${owner#* }"
+
+    # A lock whose owner is gone (crash, SIGKILL) would block everything forever.
+    if [[ ! "$owner_pid" =~ ^[0-9]+$ ]] || ! kill -0 "$owner_pid" 2>/dev/null; then
+      warn "Clearing a stale lock left by ${owner_label:-a previous run}"
+      rm -rf "$LOCK_DIR"
+      continue
+    fi
+
+    [[ $waited -eq 0 ]] && info "Waiting for '${owner_label}' (PID $owner_pid) to finish..."
+    [[ $waited -ge $LOCK_WAIT ]] && die "'${owner_label}' (PID $owner_pid) has held the lock for ${LOCK_WAIT}s.
+    Wait for it, or remove the lock by hand: rm -rf '$LOCK_DIR'"
+    sleep 2; waited=$((waited + 2))
+  done
+
+  printf '%s %s\n' "$$" "$label" > "$LOCK_DIR/owner"
+  export PAL_LOCK_HELD="$$"
+  # EXIT alone misses Ctrl-C in some bash builds, so name the signals too.
+  trap release_lock EXIT INT TERM
+}
 
 # --- Connection addresses ----------------------------------------------------
 # LAN IP. Hard-coding en0 misses wired/wireless setups, so ask the routing table

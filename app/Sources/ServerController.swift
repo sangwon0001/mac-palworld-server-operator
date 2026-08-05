@@ -73,7 +73,11 @@ final class ServerController: ObservableObject {
                 // would keep spinning and burning CPU after the instance disappears.)
                 guard let self else { return }
                 await self.refresh()
-                try? await Task.sleep(for: .seconds(3))
+                // Every poll spawns bash + status.sh (lsof, ps, du). At 3s that is
+                // worth it for a live server whose players and memory move, and
+                // pure waste for a stopped one where nothing changes until the user
+                // presses Start — which refreshes immediately anyway.
+                try? await Task.sleep(for: .seconds(self.status.running ? 3 : 10))
             }
         }
     }
@@ -237,7 +241,7 @@ final class ServerController: ObservableObject {
     }
 
     private func loadBackups() async {
-        let dir = (NSHomeDirectory() as NSString).appendingPathComponent("palworld_backups")
+        let dir = status.backupDirectoryPath
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: dir) else { backups = []; return }
 
@@ -281,8 +285,10 @@ final class ServerController: ObservableObject {
     func update()  { perform(t("서버 업데이트 중…"), script: "install_update.sh") }
 
     /// Restoring is hard to undo, so the UI must confirm before calling this.
+    /// `--yes` rather than piping "y" into the prompt: that made the GUI depend on
+    /// the exact wording and order of a shell `read`.
     func restore(_ filename: String) {
-        perform(t("복원 중…"), script: "restore_save.sh", args: [filename], stdin: "y\n")
+        perform(t("복원 중…"), script: "restore_save.sh", args: ["--yes", filename])
     }
 
     // MARK: - Game settings

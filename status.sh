@@ -11,12 +11,44 @@
 #     ./status.sh --json     # machine-readable (used by the app)
 # ==============================================================================
 set -uo pipefail   # no -e: a partial failure should not abort the whole report
-cd "$(dirname "${BASH_SOURCE[0]}")"
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 source ./config.sh
 
 # ---------------------------------------------------------------- JSON output
 # For machine consumers such as the GUI app. Kept separate from the human output,
 # which carries colour codes and would be fragile to parse.
+
+# Quote a string as JSON. Player nicknames, world folder names and backup labels
+# are arbitrary text, and a single backslash in any of them used to produce
+# invalid JSON — which the app cannot decode, so the whole status panel freezes
+# rather than showing one odd name.
+json_str() {
+  local s="${1//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\n'/\\n}"
+  printf '"%s"' "$s"
+}
+
+# du -sk walks the whole save folder. The app polls every 3 seconds, so on a
+# grown world that is a full directory scan several times a minute for a figure
+# that changes at autosave speed. Cache it briefly.
+SAVE_SIZE_TTL="${SAVE_SIZE_TTL:-30}"
+cached_save_bytes() {
+  local cache="$RUN_DIR/savesize.cache" age kb bytes
+  [[ -d "$SAVEGAMES_DIR" ]] || { printf '0'; return 0; }
+  if [[ -f "$cache" ]]; then
+    age=$(( $(date +%s) - $(stat -f %m "$cache" 2>/dev/null || echo 0) ))
+    if [[ $age -ge 0 && $age -lt $SAVE_SIZE_TTL ]]; then cat "$cache"; return 0; fi
+  fi
+  kb="$(du -sk "$SAVEGAMES_DIR" 2>/dev/null | cut -f1)"
+  [[ "$kb" =~ ^[0-9]+$ ]] || kb=0
+  bytes=$(( kb * 1024 ))
+  mkdir -p "$RUN_DIR" && printf '%s' "$bytes" > "$cache" 2>/dev/null
+  printf '%s' "$bytes"
+}
+
 emit_json() {
   # --no-rcon skips the player lookup. Going through bash+python3 costs about
   # 260ms — most of this script's runtime — and the GUI app already queries players
@@ -39,23 +71,30 @@ emit_json() {
   # Player list (only when RCON is up)
   player_count=0; players_json="[]"
   if [[ "$skip_rcon" != "--no-rcon" && -n "$RCON_PASSWORD" && -n "$pid" && "$rcon_up" == "true" ]]; then
-    local raw; raw="$(rcon_cmd "ShowPlayers" 2>/dev/null || true)"
+    local raw line name acc=""
+    raw="$(rcon_cmd "ShowPlayers" 2>/dev/null || true)"
     if [[ -n "$raw" ]]; then
-      players_json="$(printf '%s\n' "$raw" | tail -n +2 | awk -F, '
-        NF>1 && $1 != "" {
-          gsub(/"/, "", $1)
-          printf "%s\"%s\"", (n++ ? "," : ""), $1
-        } END { }' )"
-      players_json="[${players_json}]"
-      player_count="$(printf '%s\n' "$raw" | tail -n +2 | grep -c . )"
+      # ShowPlayers is CSV with a header line; the name is the first field.
+      while IFS= read -r line; do
+        name="${line%%,*}"
+        [[ -n "$name" ]] || continue
+        [[ $player_count -gt 0 ]] && acc+=","
+        acc+="$(json_str "$name")"
+        player_count=$((player_count + 1))
+      done < <(printf '%s\n' "$raw" | tail -n +2)
+      players_json="[${acc}]"
     fi
   fi
 
-  save_bytes=0
-  [[ -d "$SAVEGAMES_DIR" ]] && save_bytes="$(du -sk "$SAVEGAMES_DIR" 2>/dev/null | cut -f1)" && save_bytes=$(( save_bytes * 1024 ))
+  save_bytes="$(cached_save_bytes)"
 
-  world_json="$(ls -1 "$SAVEGAMES_DIR" 2>/dev/null | awk '{printf "%s\"%s\"", (n++ ? "," : ""), $0}')"
-  world_json="[${world_json}]"
+  local world acc_w=""
+  while IFS= read -r world; do
+    [[ -n "$world" ]] || continue
+    [[ -n "$acc_w" ]] && acc_w+=","
+    acc_w+="$(json_str "$world")"
+  done < <(ls -1 "$SAVEGAMES_DIR" 2>/dev/null || true)
+  world_json="[${acc_w}]"
 
   latest_backup="$(ls -1t "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | head -n1 || true)"
   backup_count="$(ls -1 "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
@@ -71,22 +110,26 @@ emit_json() {
   printf '"pid":%s,'          "${pid:-0}"
   printf '"cpuPercent":%s,'   "${cpu:-0}"
   printf '"memoryMB":%s,'     "$rss_mb"
-  printf '"uptime":"%s",'     "${etime:-}"
+  printf '"uptime":%s,'       "$(json_str "${etime:-}")"
   printf '"portBound":%s,'    "$port_bound"
   printf '"rconListening":%s,' "$rcon_up"
   printf '"playerCount":%s,'  "${player_count:-0}"
   printf '"players":%s,'      "$players_json"
   printf '"saveBytes":%s,'    "${save_bytes:-0}"
   printf '"worlds":%s,'       "$world_json"
-  printf '"latestBackup":"%s",' "$(basename "${latest_backup:-}" 2>/dev/null)"
+  printf '"latestBackup":%s,' "$(json_str "$(basename "${latest_backup:-}" 2>/dev/null)")"
   printf '"backupCount":%s,'  "${backup_count:-0}"
+  # Where the backups actually live. BACKUP_DIR is overridable in
+  # config.local.sh, and without this the app had no way to know — it guessed
+  # ~/palworld_backups and showed an empty list next to a non-zero count.
+  printf '"backupDir":%s,'    "$(json_str "$BACKUP_DIR")"
   printf '"gamePort":%s,'     "$GAME_PORT"
   printf '"rconPort":%s,'     "$RCON_PORT"
   # Connection addresses. The public IP is left out because it requires an
   # external request; ask for it explicitly instead.
-  printf '"lanIP":"%s",'      "$(lan_ip || true)"
-  printf '"localHostname":"%s",' "$(local_hostname || true)"
-  printf '"installedBuild":"%s",' "$installed_build"
+  printf '"lanIP":%s,'        "$(json_str "$(lan_ip || true)")"
+  printf '"localHostname":%s,' "$(json_str "$(local_hostname || true)")"
+  printf '"installedBuild":%s,' "$(json_str "$installed_build")"
   printf '"rconConfigured":%s' "$([[ -n "$RCON_PASSWORD" ]] && echo true || echo false)"
   printf '}\n'
 }

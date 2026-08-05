@@ -3,9 +3,15 @@
 # install_cron.sh - Helper for scheduling backups and automatic restarts
 #
 #   Default schedule:
-#     hourly       back up the save
+#     hourly :30   back up the save
 #     daily 05:00  back up and restart (clears the memory leak)
 #     daily 06:00  restart only if memory exceeds 8 GB (secondary safety net)
+#
+#   [Why :30] auto_restart.sh runs a backup of its own before stopping the
+#   server. An hourly backup on the hour would collide with both daily jobs —
+#   two archives of the same save at once, one of them being written while the
+#   server shuts down. Half past the hour keeps them apart. (The run lock in
+#   config.sh is the backstop if they ever do overlap.)
 #
 #   Usage:
 #     ./install_cron.sh --show      # preview what would be installed
@@ -24,8 +30,8 @@ MARK_END="# <<< palworld-server cron <<<"
 CRON_BLOCK="$MARK_BEGIN
 PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 SHELL=/bin/bash
-# Hourly save backup
-0 * * * * cd $DIR && ./backup_save.sh >> $LOG_DIR/cron.log 2>&1
+# Hourly save backup (:30 — deliberately off the hour; see the header)
+30 * * * * cd $DIR && ./backup_save.sh >> $LOG_DIR/cron.log 2>&1
 # Daily 05:00 backup and restart (clears the memory leak)
 0 5 * * * cd $DIR && ./auto_restart.sh >> $LOG_DIR/cron.log 2>&1
 # Daily 06:00 restart only if memory exceeds 8 GB and nobody is connected
