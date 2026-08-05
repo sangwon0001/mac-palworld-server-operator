@@ -59,11 +59,13 @@ palworld-server/                     ← 스크립트 (지금 이 폴더)
 ├── backup_save.sh             4) 세이브 백업 (타임스탬프 tar.gz)
 ├── restore_save.sh            5) 백업 복원 / 타 서버 데이터 이사
 ├── status.sh                  6) PID·CPU·RAM·포트·접속자 상태 조회
-├── auto_restart.sh            7) 백업 후 재시작 (메모리 누수 대응, cron 용)
-├── install_cron.sh            8) crontab 자동 등록/해제
-├── settings.sh                9) 게임 설정 119개 읽기/쓰기 (앱과 공용)
-├── update_check.sh           10) 설치 버전 vs Steam 최신 버전 비교 (캐시 1시간)
-└── app/                      11) macOS GUI 앱 (SwiftUI)
+├── auto_restart.sh            7) 백업 후 재시작 (메모리 누수 대응, 스케줄러용)
+├── install_launchd.sh         8) launchd 자동 등록/해제 (권장)
+├── install_cron.sh            9) crontab 자동 등록/해제 (전체 디스크 접근 권한 필요)
+├── settings.sh               10) 게임 설정 119개 읽기/쓰기 (앱과 공용)
+├── update_check.sh           11) 설치 버전 vs Steam 최신 버전 비교 (캐시 1시간)
+├── uninstall.sh              12) 설치한 것 제거 (기본은 현황 보고만)
+└── app/                      13) macOS GUI 앱 (SwiftUI)
     ├── Sources/
     │   ├── PalworldServerApp.swift   @main · 메뉴바 + 메인 창
     │   ├── ContentView.swift         대시보드 · 탭 구성
@@ -638,7 +640,22 @@ cp -R ~/Downloads/Saved/SaveGames/0/* ~/PalworldServer/Pal/Saved/SaveGames/0/
 서버가 이미 죽어 있으면 재시작 대신 **복구 기동**을 수행하므로,
 크래시 감시용으로도 쓸 수 있습니다.
 
-### cron 등록
+### 스케줄러 등록
+
+등록 방법이 두 가지 있고, 둘 다 같은 작업 3개를 겁니다. **하나만** 고르세요 —
+둘 다 걸면 백업도 재시작도 두 번씩 돌아갑니다. (한쪽이 이미 걸려 있으면 다른
+쪽은 설치를 거부합니다.)
+
+```bash
+./install_launchd.sh --install   # 권장
+./install_launchd.sh --status
+./install_launchd.sh --remove
+```
+
+`launchd` 는 macOS 가 실제로 쓰는 방식입니다. 전체 디스크 접근 권한을 줄 필요가
+없고, 맥이 잠들어 있어서 놓친 실행을 깨어난 뒤 보충해 줍니다. 대신 LaunchAgent 는
+로그인 세션 안에서 돌기 때문에 **아무도 로그인하지 않은 상태에서는 실행되지
+않습니다**. 무인 재부팅이 있는 맥이라면 자동 로그인을 켜거나 cron 을 쓰세요.
 
 ```bash
 ./install_cron.sh --show      # 등록될 내용 미리보기
@@ -660,12 +677,29 @@ cp -R ~/Downloads/Saved/SaveGames/0/* ~/PalworldServer/Pal/Saved/SaveGames/0/
 서로 엉키지 않고 차례를 기다립니다 — 세이브를 건드리는 모든 스크립트가 먼저
 잠금을 잡고, 나중에 온 쪽은 무엇을 기다리는지 알려주며 대기합니다.
 
-> **macOS 필수 설정**: cron이 홈 디렉터리에 접근하려면 권한이 필요합니다.
+> **cron 을 골랐다면 필수**: cron이 홈 디렉터리에 접근하려면 권한이 필요합니다.
 > 시스템 설정 → 개인정보 보호 및 보안 → **전체 디스크 접근 권한** → `/usr/sbin/cron` 추가
 > (Finder에서 `Cmd+Shift+G` → `/usr/sbin` → `cron`을 드래그)
 >
 > 이 설정을 빠뜨리면 cron 작업이 조용히 실패합니다. 등록 후 `~/PalworldServer/logs/cron.log`로
 > 실제 동작을 반드시 확인하세요.
+>
+> launchd 로 걸었다면 이 설정은 필요 없습니다. 로그는 `~/PalworldServer/logs/launchd.log` 입니다.
+
+---
+
+## 🧹 제거하기
+
+```bash
+./uninstall.sh                # 무엇이 설치돼 있는지 보고만 하고, 아무것도 지우지 않음
+./uninstall.sh --all          # 스케줄러 + 앱 + 서버 파일 + Wine 프리픽스
+./uninstall.sh --backups      # 백업까지 (DELETE 를 직접 입력해야 실행)
+```
+
+명시하지 않은 것은 지우지 않습니다. `--server` 는 서버 폴더 안에 세이브가 들어
+있으므로 지우기 전에 마지막 백업을 한 번 뜹니다. 백업은 `--all` 에 포함되지
+않고, `--yes` 를 줘도 백업 삭제 확인은 건너뛰지 않습니다. Homebrew 패키지는
+건드리지 않고 제거 명령만 출력합니다.
 
 ---
 

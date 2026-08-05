@@ -154,10 +154,12 @@ palworld-server/
 ├── backup_save.sh          backups, naming, renaming
 ├── restore_save.sh         restore, or import a save from another server
 ├── status.sh               status (human-readable and --json)
-├── auto_restart.sh         backup + restart, for cron
-├── install_cron.sh         install/remove the crontab entries
+├── auto_restart.sh         backup + restart, on a schedule
+├── install_launchd.sh      schedule with launchd (recommended)
+├── install_cron.sh         schedule with cron (needs Full Disk Access)
 ├── settings.sh             read/write the 119 game settings
 ├── update_check.sh         installed build vs Steam's latest (1-hour cache)
+├── uninstall.sh            remove what was installed (report-only by default)
 └── app/                    macOS GUI app (SwiftUI)
     ├── Sources/
     │   ├── PalworldServerApp.swift   @main, menu bar + window
@@ -298,6 +300,21 @@ to return to.
 
 ## Scheduled maintenance
 
+Two schedulers are available and they install the same three jobs. Pick one —
+installing both would back up and restart twice over, and each refuses to install
+while the other is present.
+
+```bash
+./install_launchd.sh --install   # recommended
+./install_launchd.sh --status
+./install_launchd.sh --remove
+```
+
+`launchd` is what macOS actually uses. It needs no Full Disk Access grant, and it
+makes up a run that was missed because the Mac was asleep. The trade-off is that
+LaunchAgents live in your login session, so nothing fires while nobody is logged
+in — if this Mac reboots unattended, either enable automatic login or use cron.
+
 ```bash
 ./install_cron.sh --show      # preview
 ./install_cron.sh --install
@@ -317,9 +334,25 @@ app, say — they take turns instead of interleaving: every script that touches 
 save takes a lock first, and the one that arrives second waits and says what it
 is waiting for.
 
-> **Required on macOS:** cron needs permission to reach your home directory.
+> **Required if you chose cron:** it needs permission to reach your home directory.
 > System Settings → Privacy & Security → **Full Disk Access** → add `/usr/sbin/cron`.
 > Without it, cron jobs fail silently — check `~/PalworldServer/logs/cron.log` afterwards.
+> The launchd jobs need none of this; their log is `~/PalworldServer/logs/launchd.log`.
+
+---
+
+## Uninstalling
+
+```bash
+./uninstall.sh                # report what exists; removes nothing
+./uninstall.sh --all          # scheduling + app + server files + Wine prefix
+./uninstall.sh --backups      # the backups too (asks you to type DELETE)
+```
+
+Nothing is deleted without naming it. `--server` takes a final backup before
+removing the server folder, since the save games live inside it. Backups are
+never removed by `--all`, and `--yes` does not skip the confirmation for them.
+Homebrew packages are left alone; the command to remove Wine is printed instead.
 
 ---
 

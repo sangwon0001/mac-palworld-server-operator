@@ -262,7 +262,7 @@ ${c_bold}Worth doing next$c_rst
   - Edit settings such as the server name and difficulty
       open -e "$SETTINGS_INI"
   - Schedule backups and automatic restarts (for the memory leak)
-      ./install_cron.sh --install
+      ./install_launchd.sh --install
   - Check the addresses players connect to (LAN and external)
       ./status.sh --address
       Same network: $(lan_ip 2>/dev/null || echo 'unavailable'):$GAME_PORT

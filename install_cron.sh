@@ -45,6 +45,12 @@ case "${1:-}" in
 
   --install)
     ensure_dirs
+    # Installing both schedulers would back up and restart twice over.
+    if launchctl print "gui/$(id -u)/local.palworld.backup" >/dev/null 2>&1; then
+      die "The launchd schedule is already installed. Remove it first:
+    ./install_launchd.sh --remove
+    Running cron and launchd together would back up and restart twice over."
+    fi
     current="$(crontab -l 2>/dev/null || true)"
     # Remove any existing block before re-adding, to avoid duplicates
     cleaned="$(printf '%s\n' "$current" | sed "/$MARK_BEGIN/,/$MARK_END/d")"
