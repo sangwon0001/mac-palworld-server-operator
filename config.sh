@@ -122,6 +122,31 @@ trim_log() {
   fi
 }
 
+# --- Free space --------------------------------------------------------------
+# A disk that fills up mid-operation is one of the few ways to actually lose a
+# save: a truncated archive, or an extract that stops half way through the world
+# it is restoring. Checking first turns that into a message.
+
+# Free megabytes on the volume holding a path. -P keeps df to one line per
+# filesystem, which long device names would otherwise wrap.
+free_mb() {
+  local path="$1"
+  # df cannot stat a directory that does not exist yet, so walk up to one that does.
+  while [[ ! -d "$path" && "$path" != "/" && -n "$path" ]]; do path="$(dirname "$path")"; done
+  df -Pk "$path" 2>/dev/null | awk 'NR==2 {print int($4/1024)}'
+}
+
+# Usage: require_free_mb <path> <needed MB> "<what for>"
+require_free_mb() {
+  local path="$1" need="$2" what="${3:-this operation}" have
+  have="$(free_mb "$path")"
+  # An unreadable df is not a reason to refuse to work.
+  [[ "$have" =~ ^[0-9]+$ ]] || return 0
+  [[ "$have" -ge "$need" ]] && return 0
+  die "Not enough free space for ${what}.
+    ${have}MB free where ${need}MB is needed: $path"
+}
+
 # --- Single-writer lock ------------------------------------------------------
 # Start, stop, backup, restore and update all move the same save files around,
 # and there are three ways to trigger them at once (the app, cron and a

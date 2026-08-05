@@ -171,6 +171,13 @@ TAR_ITEMS+=("Pal/Saved/SaveGames/0")
 # Record which worlds went in, to help identify the archive when restoring.
 world_ids="$(ls -1 "$SAVEGAMES_DIR" 2>/dev/null | tr '\n' ' ')"
 
+# The archive compresses, so the uncompressed size plus a little headroom is a
+# generous bar — but a full disk mid-tar leaves a corrupt archive, and a backup
+# you cannot trust is worse than an error message.
+save_mb="$(du -sm "$SAVEGAMES_DIR" 2>/dev/null | cut -f1)"
+[[ "$save_mb" =~ ^[0-9]+$ ]] || save_mb=0
+require_free_mb "$BACKUP_DIR" $((save_mb + 100)) "a backup of the ${save_mb}MB save"
+
 info "Creating backup..."
 info "  World IDs: ${world_ids:-(none)}"
 tar -czf "$ARCHIVE" -C "$PAL_ROOT" "${TAR_ITEMS[@]}" 2>/dev/null \

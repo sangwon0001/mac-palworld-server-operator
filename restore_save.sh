@@ -49,9 +49,14 @@ require_stopped() {
 # Snapshot the current state first, so a wrong restore can still be undone
 snapshot_current() {
   if [[ -d "$SAVEGAMES_DIR" ]] && [[ -n "$(ls -A "$SAVEGAMES_DIR" 2>/dev/null)" ]]; then
-    local snap
+    local snap saved_mb
     snap="$BACKUP_DIR/prerestore_$(date '+%Y%m%d_%H%M%S').tar.gz"
     mkdir -p "$BACKUP_DIR"
+    # This snapshot is the only way back from a wrong restore, so refuse rather
+    # than write a truncated one.
+    saved_mb="$(du -sm "$SAVED_DIR" 2>/dev/null | cut -f1)"
+    [[ "$saved_mb" =~ ^[0-9]+$ ]] || saved_mb=0
+    require_free_mb "$BACKUP_DIR" $((saved_mb + 100)) "the pre-restore snapshot"
     tar -czf "$snap" -C "$PAL_ROOT" "Pal/Saved" 2>/dev/null || true
     ok "Snapshot of the current state: $snap"
   fi

@@ -32,6 +32,15 @@ if is_running; then
   die "The server is running. Stop it with ./stop_server.sh before updating."
 fi
 
+# A fresh install pulls about 5.6GB; an update only fetches changed depots but
+# still needs room to stage them. SteamCMD's own failure on a full disk is a
+# retry loop with an unhelpful message, so check before handing over.
+if [[ -f "$PAL_EXE_SHIPPING" || -f "$PAL_EXE_LAUNCHER" ]]; then
+  require_free_mb "$PAL_ROOT" 2000 "a server update"
+else
+  require_free_mb "$PAL_ROOT" 8000 "the first server install (about 5.6GB)"
+fi
+
 info "SteamCMD: $STEAMCMD"
 info "Install path: $PAL_ROOT"
 info "App ID   : $STEAM_APPID (forcing the Windows platform)"
