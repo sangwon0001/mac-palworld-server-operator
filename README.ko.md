@@ -118,7 +118,12 @@ PATH 등록이 필요합니다.
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && exec zsh
 ```
 
-그다음 이 폴더를 새 맥으로 옮기고(`git clone` 또는 폴더 복사) 실행합니다.
+그다음 새 맥에서 내려받아 실행합니다.
+
+```bash
+git clone git@github.com:sangwon0001/mac-palworld-server-operator.git palworld-server
+cd palworld-server && ./install.sh
+```
 
 ```bash
 cd palworld-server && ./install.sh
@@ -737,3 +742,14 @@ tail -f ~/PalworldServer/logs/palserver.log      # 서버 로그
 tail -f ~/PalworldServer/logs/auto_restart.log   # 자동 재시작 로그
 tail -f ~/PalworldServer/logs/operations.log     # 운영 감사 로그
 ```
+
+---
+
+## 라이선스
+
+[MIT](LICENSE) — 저작권 표시만 유지하면 자유롭게 사용·수정·배포할 수 있습니다.
+무보증입니다. 번역 레이어를 두 겹 거쳐 Windows 게임 서버를 돌리는 구성 자체가
+불안정하니, 세이브 백업은 꼭 챙기세요.
+
+Palworld 는 Pocketpair, Inc. 의 상표입니다. 이 프로젝트는 Pocketpair 와 무관하며
+승인받지 않았습니다.
