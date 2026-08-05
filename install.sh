@@ -61,6 +61,21 @@ printf '%s╚══════════════════════�
 
 [[ "$(uname -s)" == "Darwin" ]] || die "macOS 전용입니다."
 
+# --- python3 실행 가능 여부 (Command Line Tools) -----------------------------
+# 새 맥에서는 /usr/bin/python3 파일이 '존재'하지만 실행하면 개발자 도구 설치
+# 대화상자만 띄우고 실패하는 스텁입니다. 그래서 command -v 로는 판별할 수 없고
+# 실제로 실행해 봐야 합니다.
+# RCON 클라이언트(config.sh), 상태 조회, 설정 편집이 모두 python3 에 의존하므로
+# 이게 없으면 설치를 진행해도 핵심 기능이 동작하지 않습니다.
+if ! python3 -c 'pass' >/dev/null 2>&1; then
+  printf '\n%s✘ Command Line Tools 가 필요합니다%s\n\n' "$c_red" "$c_rst"
+  printf '  python3 를 실행할 수 없습니다. 이 도구 모음은 RCON 안전 종료·상태 조회·\n'
+  printf '  설정 편집에 python3 를 사용합니다.\n\n'
+  printf '  아래를 실행해 설치를 마친 뒤 다시 시도하세요 (대화상자가 뜹니다):\n\n'
+  printf '    xcode-select --install\n\n'
+  exit 1
+fi
+
 source ./config.sh
 
 # 라벨을 '표시 폭' 기준으로 정렬해 출력합니다.

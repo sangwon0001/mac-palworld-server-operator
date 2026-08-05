@@ -92,6 +92,37 @@ palworld-server/                     ← 스크립트 (지금 이 폴더)
 
 ## 🚀 설치 (권장: 원클릭)
 
+### 새 맥에서 처음부터 하는 경우
+
+`install.sh` 는 대부분을 자동으로 처리하지만, **두 가지는 사람이 먼저 해야 합니다.**
+둘 다 관리자 암호를 요구하거나 보안상 스크립트가 대신하면 안 되는 일입니다.
+
+```bash
+xcode-select --install
+```
+python3 를 쓸 수 있게 합니다. 새 맥의 `/usr/bin/python3` 는 파일만 있고 실행하면
+설치 대화상자를 띄우는 **스텁**이라, RCON 안전 종료·상태 조회·설정 편집이 전부
+동작하지 않습니다. `install.sh` 가 시작할 때 실제로 실행해 보고 막아 줍니다.
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+Homebrew 입니다. 설치 스크립트가 이걸 대신 실행하지는 않습니다 — 외부 스크립트를
+받아 실행하는 일은 사용자가 직접 확인하고 해야 합니다. 설치 후 Apple Silicon 은
+PATH 등록이 필요합니다.
+
+```bash
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && exec zsh
+```
+
+그다음 이 폴더를 새 맥으로 옮기고(`git clone` 또는 폴더 복사) 실행합니다.
+
+```bash
+cd palworld-server && ./install.sh
+```
+
+### 이미 준비된 맥에서
+
 ```bash
 cd ~/Projects/ys-games/palworld-server && ./install.sh
 ```
