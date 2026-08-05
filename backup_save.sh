@@ -128,7 +128,7 @@ while [[ $# -gt 0 ]]; do
       audit "backup renamed $(basename "$target") -> $(basename "$newpath")"
       exit 0 ;;
     --no-prune) PRUNE=0; shift ;;
-    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^# ===/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option: $1 (--name | --list | --rename | --no-prune)" ;;
   esac
 done

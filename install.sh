@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
     --yes|-y)  ASSUME_YES=1; shift ;;
     --no-app)  BUILD_APP=0; shift ;;
     --check)   CHECK_ONLY=1; shift ;;
-    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^# ===/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
   esac
 done

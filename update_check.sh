@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
     --json)   MODE="json"; shift ;;
     --force)  FORCE=1; shift ;;
     --cached) CACHED_ONLY=1; shift ;;
-    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^# ===/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option: $1 (--json | --force | --cached)" ;;
   esac
 done

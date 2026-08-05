@@ -281,6 +281,6 @@ case "$MODE" in
       printf '    ./auto_restart.sh    (back up, then restart safely)\n'
     fi
     ;;
-  -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help) sed -n '2,/^# ===/p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) die "Unknown option: $MODE (--json | --get | --set | --diff | --reset)" ;;
 esac

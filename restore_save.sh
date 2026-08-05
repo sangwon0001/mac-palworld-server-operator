@@ -17,7 +17,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./config.sh
 
-usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,/^# ===/p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 # --yes is pulled out before the mode is decided, so it can be given on either
 # side of the filename. The app passes it instead of piping "y" into the prompt —

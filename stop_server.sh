@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --now)   DELAY=1; shift ;;
     --force) FORCE=1; shift ;;
-    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^# ===/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)       die "Unknown option: $1 (--now | --force)" ;;
   esac
 done
