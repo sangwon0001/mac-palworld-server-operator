@@ -21,8 +21,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./config.sh
 
-[[ -f "$SETTINGS_INI" ]] || die "설정 파일이 없습니다: $SETTINGS_INI
-    서버를 한 번 설치/기동해야 생성됩니다."
+[[ -f "$SETTINGS_INI" ]] || die "Settings file not found: $SETTINGS_INI
+    It is created once the server has been installed and started."
 
 MODE="${1:---json}"
 shift || true
@@ -41,7 +41,7 @@ raw  = open(path, encoding="utf-8").read()
 OPT_RE = re.compile(r'(OptionSettings=\()(.*)(\))', re.S)
 m = OPT_RE.search(raw)
 if not m:
-    print("OptionSettings 블록을 찾지 못했습니다.", file=sys.stderr)
+    print("Could not find the OptionSettings block.", file=sys.stderr)
     sys.exit(2)
 body = m.group(2)
 
@@ -104,7 +104,7 @@ OPERATIONAL_KEYS = {
 def commit_changes(changes):
     """Apply [(key, old, new)] to the file, rewriting only those keys."""
     if not changes:
-        print("변경할 내용이 없습니다.")
+        print("Nothing to change.")
         return 0
 
     new_body = body
@@ -113,7 +113,7 @@ def commit_changes(changes):
                              + re.escape(old) + r'(?=,|\)|$)')
         new_body, n = pattern.subn(f'{k}={new}', new_body, count=1)
         if n != 1:
-            print(f"{k} 치환에 실패했습니다. 파일을 수정하지 않았습니다.", file=sys.stderr)
+            print(f"Failed to substitute {k}. The file was not modified.", file=sys.stderr)
             return 7
 
     new_raw = raw[:m.start(2)] + new_body + raw[m.end(2):]
@@ -124,8 +124,8 @@ def commit_changes(changes):
     open(path, "w", encoding="utf-8").write(new_raw)
 
     for k, old, new in changes:
-        print(f"  {k}: {old or '(빈값)'} → {new or '(빈값)'}")
-    print(f"\n{len(changes)}개 항목 변경. 백업: {os.path.basename(path)}.bak_{stamp}")
+        print(f"  {k}: {old or '(empty)'} -> {new or '(empty)'}")
+    print(f"\n{len(changes)} setting(s) changed. Backup: {os.path.basename(path)}.bak_{stamp}")
     return 0
 
 # ------------------------------------------------------------------ Read
@@ -147,18 +147,18 @@ if mode == "get":
     for k, v in items:
         if k.lower() == want.lower():
             print(unquote(v)); sys.exit(0)
-    print(f"그런 항목이 없습니다: {want}", file=sys.stderr)
+    print(f"No such setting: {want}", file=sys.stderr)
     sys.exit(3)
 
 if mode == "diff":
     rows = [(k, unquote(defaults[k]), unquote(v))
             for k, v in items if k in defaults and defaults[k] != v]
     if not rows:
-        print("기본값과 다른 항목이 없습니다.")
+        print("Nothing differs from the defaults.")
     else:
         w = max(len(r[0]) for r in rows)
         for k, d, c in rows:
-            print(f"  {k.ljust(w)}  {d or '(빈값)'}  →  {c or '(빈값)'}")
+            print(f"  {k.ljust(w)}  {d or '(empty)'}  ->  {c or '(empty)'}")
     sys.exit(0)
 
 # ------------------------------------------------------------------ Write
@@ -167,12 +167,12 @@ if mode == "set":
     changes = []
     for arg in sys.argv[1:]:
         if '=' not in arg:
-            print(f"형식이 잘못됐습니다 (Key=Value): {arg}", file=sys.stderr)
+            print(f"Bad format, expected Key=Value: {arg}", file=sys.stderr)
             sys.exit(4)
         k, newv = arg.split('=', 1)
         k = k.strip()
         if k not in current:
-            print(f"알 수 없는 항목입니다: {k}", file=sys.stderr)
+            print(f"Unknown setting: {k}", file=sys.stderr)
             sys.exit(5)
 
         t = kind(current[k])
@@ -185,24 +185,24 @@ if mode == "set":
             if low in ("true", "1", "on", "yes"):    formatted = "True"
             elif low in ("false", "0", "off", "no"): formatted = "False"
             else:
-                print(f"{k}: True/False 가 필요합니다 (받은 값: {newv})", file=sys.stderr)
+                print(f"{k}: expected True/False, got {newv}", file=sys.stderr)
                 sys.exit(6)
         elif t == "float":
             bare = unquote(newv)
             try:
                 formatted = "%.6f" % float(bare)
             except ValueError:
-                print(f"{k}: 숫자가 필요합니다 (받은 값: {newv})", file=sys.stderr); sys.exit(6)
+                print(f"{k}: expected a number, got {newv}", file=sys.stderr); sys.exit(6)
         elif t == "int":
             bare = unquote(newv)
             try:
                 formatted = str(int(float(bare)))
             except ValueError:
-                print(f"{k}: 정수가 필요합니다 (받은 값: {newv})", file=sys.stderr); sys.exit(6)
+                print(f"{k}: expected an integer, got {newv}", file=sys.stderr); sys.exit(6)
         elif t == "string":
             inner = unquote(newv)
             if '"' in inner:
-                print(f"{k}: 값에 큰따옴표를 넣을 수 없습니다.", file=sys.stderr); sys.exit(6)
+                print(f"{k}: the value cannot contain a double quote.", file=sys.stderr); sys.exit(6)
             formatted = f'"{inner}"'
         else:  # enum and tuple are used verbatim
             formatted = unquote(newv) if t == "enum" else newv
@@ -216,7 +216,7 @@ if mode == "set":
 # ------------------------------------------------------------------ Reset
 if mode == "reset":
     if not defaults:
-        print("DefaultPalWorldSettings.ini 를 찾을 수 없어 기본값을 알 수 없습니다.",
+        print("DefaultPalWorldSettings.ini is missing, so defaults are unknown.",
               file=sys.stderr)
         sys.exit(8)
 
@@ -230,10 +230,10 @@ if mode == "reset":
         targets = []
         for k in wanted:
             if k not in current:
-                print(f"알 수 없는 항목입니다: {k}", file=sys.stderr)
+                print(f"Unknown setting: {k}", file=sys.stderr)
                 sys.exit(5)
             if k not in defaults:
-                print(f"기본값을 알 수 없는 항목입니다: {k}", file=sys.stderr)
+                print(f"No known default for: {k}", file=sys.stderr)
                 sys.exit(8)
             targets.append(k)
     else:
@@ -248,39 +248,39 @@ if mode == "reset":
         skipped = [k for k, v in items
                    if k in OPERATIONAL_KEYS and k in defaults and v != defaults[k]]
         if skipped:
-            print("운영 항목은 보호되어 그대로 둡니다 "
-                  "(복구하면 접속·관리가 끊길 수 있음):")
+            print("Operational settings are protected and left alone "
+                  "(resetting them can cut off access):")
             for k in skipped:
                 print(f"    {k}")
-            print("    → 굳이 되돌리려면 --reset --all\n")
+            print("    Use --reset --all to override.\n")
 
     sys.exit(commit_changes(changes))
 
-print(f"알 수 없는 모드: {mode}", file=sys.stderr)
+print(f"Unknown mode: {mode}", file=sys.stderr)
 sys.exit(1)
 PY
 }
 
 case "$MODE" in
   --json) run_py json ;;
-  --get)  [[ $# -ge 1 ]] || die "조회할 항목명을 지정하세요."; run_py get "$@" ;;
+  --get)  [[ $# -ge 1 ]] || die "Name the setting to read."; run_py get "$@" ;;
   --diff) run_py diff ;;
   --reset)
     run_py reset "$@"
     if is_running; then
-      warn "서버가 실행 중입니다. 변경된 설정은 재시작 후에 적용됩니다."
-      printf '    ./auto_restart.sh    (백업 후 안전하게 재시작)\n'
+      warn "The server is running. Changes take effect after a restart."
+      printf '    ./auto_restart.sh    (back up, then restart safely)\n'
     fi
     ;;
   --set)
-    [[ $# -ge 1 ]] || die "Key=Value 형식으로 지정하세요."
+    [[ $# -ge 1 ]] || die "Use Key=Value form."
     run_py set "$@"
     # Make it clear that a running server needs a restart to pick this up.
     if is_running; then
-      warn "서버가 실행 중입니다. 변경된 설정은 재시작 후에 적용됩니다."
-      printf '    ./auto_restart.sh    (백업 후 안전하게 재시작)\n'
+      warn "The server is running. Changes take effect after a restart."
+      printf '    ./auto_restart.sh    (back up, then restart safely)\n'
     fi
     ;;
   -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) die "알 수 없는 옵션: $MODE (--json | --get | --set | --diff | --reset)" ;;
+  *) die "Unknown option: $MODE (--json | --get | --set | --diff | --reset)" ;;
 esac

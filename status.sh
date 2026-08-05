@@ -95,22 +95,22 @@ case "${1:-}" in
   --json) emit_json "${2:-}"; exit 0 ;;
   --address|--ip)
     # The addresses to hand out to players, in one place.
-    info "접속 주소"
+    info "Connection addresses"
     ip="$(lan_ip || true)"; host="$(local_hostname || true)"
-    [[ -n "$ip"   ]] && printf '  같은 공유기 안 : %s%s:%s%s\n' "$_c_grn" "$ip" "$GAME_PORT" "$_c_reset"
-    [[ -n "$host" ]] && printf '  같은 공유기 안 : %s%s:%s%s  (IP 가 바뀌어도 유지됨)\n' \
+    [[ -n "$ip"   ]] && printf '  Same network : %s%s:%s%s\n' "$_c_grn" "$ip" "$GAME_PORT" "$_c_reset"
+    [[ -n "$host" ]] && printf '  Same network : %s%s:%s%s  (survives IP changes)\n' \
                         "$_c_grn" "$host" "$GAME_PORT" "$_c_reset"
     # Progress indicator only on a TTY: piped to a file, the \r never clears and
     # leaves the output messy.
-    if [[ -t 1 ]]; then printf '  외부(인터넷)   : 공인 IP 조회 중...'; fi
+    if [[ -t 1 ]]; then printf '  External     : looking up public IP...'; fi
     pub="$(public_ip || true)"
     if [[ -t 1 ]]; then printf '\r%*s\r' 60 ''; fi
     if [[ -n "$pub" ]]; then
-      printf '  외부(인터넷)   : %s%s:%s%s\n' "$_c_grn" "$pub" "$GAME_PORT" "$_c_reset"
-      printf '                   %s공유기에서 UDP %s 포트포워딩이 되어 있어야 합니다%s\n' \
+      printf '  External     : %s%s:%s%s\n' "$_c_grn" "$pub" "$GAME_PORT" "$_c_reset"
+      printf '                 %sRequires UDP %s port forwarding on your router%s\n' \
              "$_c_dim" "$GAME_PORT" "$_c_reset"
     else
-      printf '  외부(인터넷)   : 공인 IP 조회 실패 (네트워크 확인)          \n'
+      printf '  External     : public IP lookup failed (check the network)   \n'
     fi
     exit 0 ;;
   --watch)
@@ -118,17 +118,17 @@ case "${1:-}" in
       && exec watch -n5 --color "$PWD/status.sh" \
       || while :; do clear; "$0"; sleep 5; done ;;
   --log)
-    [[ -f "$SERVER_LOG" ]] || die "로그 파일이 없습니다: $SERVER_LOG"
+    [[ -f "$SERVER_LOG" ]] || die "No log file: $SERVER_LOG"
     exec tail -f "$SERVER_LOG" ;;
   "") ;;
-  *) die "알 수 없는 옵션: $1 (--watch | --log | --address | --json)" ;;
+  *) die "Unknown option: $1 (--watch | --log | --address | --json)" ;;
 esac
 
 hr() { printf '%s\n' "════════════════════════════════════════════════════════════"; }
 row() { printf '  %-16s %s\n' "$1" "$2"; }
 
 hr
-printf '  Palworld Dedicated Server — 상태 (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+printf '  Palworld Dedicated Server — status (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')"
 hr
 
 # ------------------------------------------------------------------ Process
@@ -139,12 +139,12 @@ if [[ -z "$pid" ]]; then
 fi
 
 if [[ -n "$pid" ]]; then
-  printf '%s ● 실행 중%s\n' "$_c_grn" "$_c_reset"
+  printf '%s ● Running%s\n' "$_c_grn" "$_c_reset"
 elif [[ -n "$orphan" ]]; then
-  printf '%s ● 실행 중 (PID 파일 불일치)%s\n' "$_c_ylw" "$_c_reset"
+  printf '%s ● Running (PID file mismatch)%s\n' "$_c_ylw" "$_c_reset"
   pid="$orphan"
 else
-  printf '%s ● 정지됨%s\n' "$_c_red" "$_c_reset"
+  printf '%s ● Stopped%s\n' "$_c_red" "$_c_reset"
 fi
 echo
 
@@ -153,36 +153,36 @@ if [[ -n "$pid" ]]; then
   read -r p_cpu p_rss p_etime p_start <<<"$(ps -o %cpu=,rss=,etime=,lstart= -p "$pid" 2>/dev/null | awk '{printf "%s %s %s %s", $1, $2, $3, substr($0, index($0,$4))}')"
 
   row "PID"        "$pid"
-  row "CPU 점유율"  "${p_cpu:-?} %"
+  row "CPU"        "${p_cpu:-?} %"
 
   # RSS comes in KB; convert to MB/GB — the key signal for tracking leaks
   if [[ -n "${p_rss:-}" ]]; then
     rss_mb=$(( p_rss / 1024 ))
     if (( rss_mb >= 1024 )); then
-      row "메모리(RSS)" "$(awk -v m="$rss_mb" 'BEGIN{printf "%.2f GB (%d MB)", m/1024, m}')"
+      row "Memory (RSS)" "$(awk -v m="$rss_mb" 'BEGIN{printf "%.2f GB (%d MB)", m/1024, m}')"
     else
-      row "메모리(RSS)" "${rss_mb} MB"
+      row "Memory (RSS)" "${rss_mb} MB"
     fi
     # Palworld's RSS tends to climb steadily over long uptimes.
     if (( rss_mb >= 12288 )); then
-      printf '  %s⚠ 메모리 사용량이 12GB 를 넘었습니다. 재시작을 권장합니다.%s\n' "$_c_red" "$_c_reset"
+      printf '  %s⚠ Memory is above 12GB. A restart is recommended.%s\n' "$_c_red" "$_c_reset"
     elif (( rss_mb >= 8192 )); then
-      printf '  %s⚠ 메모리 사용량 8GB 초과 — 누수 진행 중일 수 있습니다.%s\n' "$_c_ylw" "$_c_reset"
+      printf '  %s⚠ Memory is above 8GB — a leak may be under way.%s\n' "$_c_ylw" "$_c_reset"
     fi
   fi
 
-  row "가동 시간"   "${p_etime:-?}"
-  row "시작 시각"   "${p_start:-?}"
+  row "Uptime"     "${p_etime:-?}"
+  row "Started"    "${p_start:-?}"
 
   # Installed build (./update_check.sh decides whether it is current)
   _mf="$PAL_ROOT/steamapps/appmanifest_${STEAM_APPID}.acf"
   if [[ -f "$_mf" ]]; then
-    row "설치 빌드" "$(awk '/"buildid"/ {gsub(/"/,"",$2); print $2; exit}' "$_mf")"
+    row "Build"      "$(awk '/"buildid"/ {gsub(/"/,"",$2); print $2; exit}' "$_mf")"
   fi
 
   # Wine spawns several child processes, so show the combined total too.
   total_rss="$(ps -axo rss=,command= 2>/dev/null | grep -E 'PalServer|wineserver' | grep -v grep | awk '{s+=$1} END {print int(s/1024)}')"
-  [[ -n "$total_rss" && "$total_rss" != "0" ]] && row "Wine 전체 RAM" "${total_rss} MB"
+  [[ -n "$total_rss" && "$total_rss" != "0" ]] && row "Wine total RAM" "${total_rss} MB"
 else
   row "PID"        "-"
 fi
@@ -190,16 +190,16 @@ fi
 echo
 # ------------------------------------------------------------------ Ports
 if lsof -nP -iUDP:"$GAME_PORT" >/dev/null 2>&1; then
-  printf '  %s✔%s UDP %s  바인딩됨 (게임 포트)\n' "$_c_grn" "$_c_reset" "$GAME_PORT"
+  printf '  %s✔%s UDP %s  bound (game port)\n' "$_c_grn" "$_c_reset" "$GAME_PORT"
   lsof -nP -iUDP:"$GAME_PORT" 2>/dev/null | awk 'NR>1 {printf "      %s (PID %s)\n", $1, $2}' | sort -u
 else
-  printf '  %s✘%s UDP %s  바인딩 안 됨 — 외부 접속 불가\n' "$_c_red" "$_c_reset" "$GAME_PORT"
+  printf '  %s✘%s UDP %s  not bound — nobody can connect\n' "$_c_red" "$_c_reset" "$GAME_PORT"
 fi
 
 if lsof -nP -iTCP:"$RCON_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  printf '  %s✔%s TCP %s  RCON 대기 중\n' "$_c_grn" "$_c_reset" "$RCON_PORT"
+  printf '  %s✔%s TCP %s  RCON listening\n' "$_c_grn" "$_c_reset" "$RCON_PORT"
 else
-  printf '  %s·%s TCP %s  RCON 비활성 (PalWorldSettings.ini 의 RCONEnabled 확인)\n' "$_c_dim" "$_c_reset" "$RCON_PORT"
+  printf '  %s·%s TCP %s  RCON off (check RCONEnabled in PalWorldSettings.ini)\n' "$_c_dim" "$_c_reset" "$RCON_PORT"
 fi
 
 # Connection addresses, in a form you can read out to friends directly.
@@ -208,9 +208,9 @@ fi
 _lan="$(lan_ip || true)"; _host="$(local_hostname || true)"
 if [[ -n "$_lan" || -n "$_host" ]]; then
   echo
-  [[ -n "$_lan"  ]] && row "접속 주소" "$_lan:$GAME_PORT"
+  [[ -n "$_lan"  ]] && row "Address"    "$_lan:$GAME_PORT"
   [[ -n "$_host" ]] && row ""         "$_host:$GAME_PORT"
-  printf '      %s외부 접속 주소는 ./status.sh --address%s\n' "$_c_dim" "$_c_reset"
+  printf '      %sFor the external address: ./status.sh --address%s\n' "$_c_dim" "$_c_reset"
 fi
 
 # ------------------------------------------------------- Players via RCON
@@ -221,7 +221,7 @@ if [[ -n "$RCON_PASSWORD" ]] && [[ -n "$pid" ]]; then
     # The first line is the CSV header (name,playeruid,steamid)
     n=$(( $(printf '%s\n' "$players" | grep -c . ) - 1 ))
     (( n < 0 )) && n=0
-    row "접속자 수" "$n 명"
+    row "Players"    "$n"
     printf '%s\n' "$players" | tail -n +2 | awk -F, 'NF>1 {printf "      %s\n", $1}'
   fi
 fi
@@ -230,29 +230,29 @@ echo
 hr
 # ------------------------------------------------------------ Saves and backups
 if [[ -d "$SAVEGAMES_DIR" ]]; then
-  row "세이브 경로" "$SAVEGAMES_DIR"
-  row "세이브 크기" "$(du -sh "$SAVEGAMES_DIR" 2>/dev/null | cut -f1)"
+  row "Save path"  "$SAVEGAMES_DIR"
+  row "Save size"  "$(du -sh "$SAVEGAMES_DIR" 2>/dev/null | cut -f1)"
   ls -1 "$SAVEGAMES_DIR" 2>/dev/null | while read -r w; do
-    printf '      월드 %s (최종수정 %s)\n' "$w" \
+    printf '      World %s (modified %s)\n' "$w" \
       "$(stat -f '%Sm' -t '%Y-%m-%d %H:%M' "$SAVEGAMES_DIR/$w" 2>/dev/null)"
   done
 else
-  row "세이브 경로" "없음 (미기동 상태)"
+  row "Save path"  "none (never started)"
 fi
 
 latest_backup="$(ls -1t "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | head -n1 || true)"
 if [[ -n "$latest_backup" ]]; then
   cnt="$(ls -1 "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
-  row "최근 백업" "$(basename "$latest_backup") ($(du -h "$latest_backup" | cut -f1))"
-  row "백업 개수" "${cnt}개"
+  row "Last backup" "$(basename "$latest_backup") ($(du -h "$latest_backup" | cut -f1))"
+  row "Backups"    "${cnt}"
 else
-  row "최근 백업" "없음 — ./backup_save.sh 실행 권장"
+  row "Last backup" "none — run ./backup_save.sh"
 fi
 
 # ------------------------------------------------------------------ Log tail
 if [[ -f "$SERVER_LOG" ]]; then
   echo
-  printf '  %s최근 로그 5줄%s (전체: ./status.sh --log)\n' "$_c_dim" "$_c_reset"
+  printf '  %sLast 5 log lines%s (full log: ./status.sh --log)\n' "$_c_dim" "$_c_reset"
   tail -n 5 "$SERVER_LOG" 2>/dev/null | sed 's/^/      /'
 fi
 hr

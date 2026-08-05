@@ -43,26 +43,26 @@ case "${1:-}" in
     # Remove any existing block before re-adding, to avoid duplicates
     cleaned="$(printf '%s\n' "$current" | sed "/$MARK_BEGIN/,/$MARK_END/d")"
     printf '%s\n%s\n' "$cleaned" "$CRON_BLOCK" | sed '/^$/N;/^\n$/D' | crontab -
-    ok "crontab 등록 완료"
+    ok "crontab entries installed"
     echo
     crontab -l | sed -n "/$MARK_BEGIN/,/$MARK_END/p"
     echo
-    warn "macOS 는 cron 이 사용자 파일에 접근하려면 '전체 디스크 접근 권한'이 필요합니다."
-    printf '    시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한 → /usr/sbin/cron 추가\n'
-    printf '    (Finder 에서 Cmd+Shift+G 로 /usr/sbin 이동 후 cron 을 드래그)\n'
+    warn "On macOS, cron needs Full Disk Access to reach your home directory."
+    printf '    System Settings > Privacy & Security > Full Disk Access > add /usr/sbin/cron\n'
+    printf '    (In Finder press Cmd+Shift+G, go to /usr/sbin, then drag cron in)\n'
     ;;
 
   --remove)
     current="$(crontab -l 2>/dev/null || true)"
     if ! printf '%s' "$current" | grep -qF "$MARK_BEGIN"; then
-      info "등록된 항목이 없습니다."
+      info "Nothing is installed."
       exit 0
     fi
     printf '%s\n' "$current" | sed "/$MARK_BEGIN/,/$MARK_END/d" | crontab -
-    ok "crontab 등록 해제 완료"
+    ok "crontab entries removed"
     ;;
 
   *)
-    die "사용법: ./install_cron.sh --show | --install | --remove"
+    die "Usage: ./install_cron.sh --show | --install | --remove"
     ;;
 esac

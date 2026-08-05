@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
     --force)  FORCE=1; shift ;;
     --cached) CACHED_ONLY=1; shift ;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) die "알 수 없는 옵션: $1 (--json | --force | --cached)" ;;
+    *) die "Unknown option: $1 (--json | --force | --cached)" ;;
   esac
 done
 
@@ -68,7 +68,7 @@ if [[ $CACHED_ONLY -eq 0 ]] && { [[ $FORCE -eq 1 ]] || [[ $fresh -eq 0 ]]; }; th
   fi
 
   if [[ -n "$STEAMCMD" ]]; then
-    [[ "$MODE" == "text" ]] && info "Steam 에서 최신 버전 조회 중 (약 6초)..."
+    [[ "$MODE" == "text" ]] && info "Checking Steam for the latest build (about 6 seconds)..."
     # Pull just the public branch's buildid out of app_info_print.
     fetched="$("$STEAMCMD" +login anonymous +app_info_print "$STEAM_APPID" +quit 2>/dev/null \
       | awk '/"branches"/{b=1} b&&/"public"/{p=1} p&&/"buildid"/{gsub(/"/,"",$2); print $2; exit}')"
@@ -95,18 +95,18 @@ fi
 # ------------------------------------------------------------------ Human output
 fmt_time() { [[ "${1:-0}" -gt 0 ]] && date -r "$1" '+%Y-%m-%d %H:%M' || echo "-"; }
 
-printf '  %-14s %s\n' "설치된 빌드" "${installed:-알 수 없음}"
-printf '  %-14s %s\n' "설치 시각"   "$(fmt_time "${installed_at:-0}")"
-printf '  %-14s %s\n' "최신 빌드"   "${latest:-조회 실패}"
-printf '  %-14s %s\n' "조회 시각"   "$(fmt_time "${checked_at:-0}")"
+printf '  %-16s %s\n' "Installed build" "${installed:-unknown}"
+printf '  %-16s %s\n' "Installed at"    "$(fmt_time "${installed_at:-0}")"
+printf '  %-16s %s\n' "Latest build"    "${latest:-lookup failed}"
+printf '  %-16s %s\n' "Checked at"      "$(fmt_time "${checked_at:-0}")"
 echo
 case "$state" in
   up-to-date)
-    ok "최신 버전입니다." ;;
+    ok "Up to date." ;;
   update-available)
-    warn "업데이트가 있습니다: $installed → $latest"
-    printf '    ./auto_restart.sh --update    (백업 → 안전 종료 → 업데이트 → 재기동)\n'
-    printf '    ./install_update.sh           (서버가 꺼져 있을 때 업데이트만)\n' ;;
+    warn "An update is available: $installed -> $latest"
+    printf '    ./auto_restart.sh --update    (back up, stop safely, update, start)\n'
+    printf '    ./install_update.sh           (update only, server already stopped)\n' ;;
   *)
-    warn "판정할 수 없습니다. 서버가 설치되어 있는지, 네트워크가 되는지 확인하세요." ;;
+    warn "Cannot determine. Check that the server is installed and the network is up." ;;
 esac

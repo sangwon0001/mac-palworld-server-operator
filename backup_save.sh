@@ -68,7 +68,7 @@ find_backup() {
 }
 
 list_backups() {
-  info "백업 목록 ($BACKUP_DIR)"
+  info "Backups in $BACKUP_DIR"
   local found=0 f stamp label size pretty
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
@@ -78,13 +78,13 @@ list_backups() {
     # 20260805_113000 → 2026-08-05 11:30
     pretty="${stamp:0:4}-${stamp:4:2}-${stamp:6:2} ${stamp:9:2}:${stamp:11:2}"
     if [[ -n "$label" ]]; then
-      printf '  %s  %6s  %s%s%s %s(자동 삭제 안 됨)%s\n' \
+      printf '  %s  %6s  %s%s%s %s(kept)%s\n' \
         "$pretty" "$size" "$_c_grn" "$label" "$_c_reset" "$_c_dim" "$_c_reset"
     else
       printf '  %s  %6s  %s-%s\n' "$pretty" "$size" "$_c_dim" "$_c_reset"
     fi
   done < <(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}*.tar.gz 2>/dev/null || true)
-  [[ $found -eq 1 ]] || warn "백업이 없습니다. ./backup_save.sh 로 첫 백업을 만드세요."
+  [[ $found -eq 1 ]] || warn "No backups yet. Run ./backup_save.sh to create one."
 }
 
 PRUNE=1
@@ -93,16 +93,16 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --list) ensure_dirs; list_backups; exit 0 ;;
     --name|-n)
-      [[ $# -ge 2 ]] || die "이름을 지정하세요: --name \"보스전 직전\""
+      [[ $# -ge 2 ]] || die "Give a name: --name \"before boss\""
       LABEL="$(sanitize_label "$2")"
-      [[ -n "$LABEL" ]] || die "쓸 수 있는 문자가 없는 이름입니다: $2"
+      [[ -n "$LABEL" ]] || die "That name has no usable characters: $2"
       shift 2 ;;
     --rename)
-      [[ $# -ge 3 ]] || die "사용법: --rename <대상> \"새이름\"   (이름을 지우려면 \"\")"
+      [[ $# -ge 3 ]] || die "Usage: --rename <target> \"new name\"   (empty string clears the name)"
       ensure_dirs
       target="$(find_backup "$2")" \
-        || die "백업을 찾을 수 없거나 여러 개가 걸립니다: $2
-    ./backup_save.sh --list 로 확인한 뒤 더 구체적으로 지정하세요."
+        || die "No single backup matches: $2
+    Check ./backup_save.sh --list and be more specific."
       new_label="$(sanitize_label "$3")"
       stamp="$(backup_stamp "$target")"
       if [[ -n "$new_label" ]]; then
@@ -110,38 +110,38 @@ while [[ $# -gt 0 ]]; do
       else
         newpath="$BACKUP_DIR/${BACKUP_PREFIX}${stamp}.tar.gz"
       fi
-      [[ "$target" == "$newpath" ]] && { info "이미 그 이름입니다."; exit 0; }
-      [[ -e "$newpath" ]] && die "같은 이름의 백업이 이미 있습니다: $(basename "$newpath")"
+      [[ "$target" == "$newpath" ]] && { info "It already has that name."; exit 0; }
+      [[ -e "$newpath" ]] && die "A backup with that name already exists: $(basename "$newpath")"
       mv "$target" "$newpath"
-      ok "이름 변경: $(basename "$target")"
+      ok "Renamed: $(basename "$target")"
       printf '           → %s\n' "$(basename "$newpath")"
       [[ -n "$new_label" ]] && note_kept=1 || note_kept=0
-      [[ $note_kept -eq 1 ]] && printf '    %s이름이 있으므로 자동 정리 대상에서 제외됩니다%s\n' "$_c_dim" "$_c_reset"
-      audit "backup 이름 변경 $(basename "$target") → $(basename "$newpath")"
+      [[ $note_kept -eq 1 ]] && printf '    %sNamed backups are excluded from automatic cleanup%s\n' "$_c_dim" "$_c_reset"
+      audit "backup renamed $(basename "$target") -> $(basename "$newpath")"
       exit 0 ;;
     --no-prune) PRUNE=0; shift ;;
     -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) die "알 수 없는 옵션: $1 (--name | --list | --rename | --no-prune)" ;;
+    *) die "Unknown option: $1 (--name | --list | --rename | --no-prune)" ;;
   esac
 done
 
 ensure_dirs
 
-[[ -d "$SAVEGAMES_DIR" ]] || die "세이브 폴더가 없습니다: $SAVEGAMES_DIR
-    (서버를 한 번도 기동하지 않았거나 PAL_ROOT 설정이 잘못되었습니다)"
+[[ -d "$SAVEGAMES_DIR" ]] || die "Save folder not found: $SAVEGAMES_DIR
+    (the server has never started, or PAL_ROOT is wrong)"
 
 # ------------------------- If the server is running, flush the save to disk first
 # Otherwise progress still held in memory would be missing from the backup.
 if is_running && [[ -n "$RCON_PASSWORD" ]]; then
-  info "서버 실행 중 — RCON 으로 세이브 플러시 요청"
+  info "Server is running — asking it to flush the save over RCON"
   if rcon_cmd "Save" >/dev/null 2>&1; then
-    ok "세이브 플러시 완료"
+    ok "Save flushed"
     sleep 3   # let the write land on disk
   else
-    warn "RCON 플러시 실패 — 마지막 자동 세이브 시점 기준으로 백업합니다."
+    warn "RCON flush failed — backing up as of the last autosave."
   fi
 elif is_running; then
-  warn "서버 실행 중이지만 RCON 미설정 — 마지막 자동 세이브 시점 기준으로 백업합니다."
+  warn "Server is running but RCON is not configured — backing up as of the last autosave."
 fi
 
 # ------------------------------------------------------------------ Create archive
@@ -160,20 +160,20 @@ TAR_ITEMS+=("Pal/Saved/SaveGames/0")
 # Record which worlds went in, to help identify the archive when restoring.
 world_ids="$(ls -1 "$SAVEGAMES_DIR" 2>/dev/null | tr '\n' ' ')"
 
-info "백업 생성 중..."
-info "  대상 월드 ID: ${world_ids:-(없음)}"
+info "Creating backup..."
+info "  World IDs: ${world_ids:-(none)}"
 tar -czf "$ARCHIVE" -C "$PAL_ROOT" "${TAR_ITEMS[@]}" 2>/dev/null \
-  || die "tar 압축 실패. 디스크 공간과 권한을 확인하세요."
+  || die "tar failed. Check disk space and permissions."
 
 # Verify the archive — so nobody relies on a backup that turns out to be corrupt
 if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
   rm -f "$ARCHIVE"
-  die "생성된 아카이브가 손상되었습니다. 백업을 중단했습니다."
+  die "The archive came out corrupt. Backup aborted."
 fi
 
 size="$(du -h "$ARCHIVE" | cut -f1)"
-ok "백업 완료: $ARCHIVE ($size)"
-audit "backup 생성 $ARCHIVE ($size, worlds=${world_ids:-none})"
+ok "Backed up: $ARCHIVE ($size)"
+audit "backup created $ARCHIVE ($size, worlds=${world_ids:-none})"
 
 # ------------------------------------------------------------- Prune old backups
 if [[ $PRUNE -eq 1 ]]; then
@@ -192,8 +192,8 @@ if [[ $PRUNE -eq 1 ]]; then
       rm -f "$f" && deleted=$((deleted + 1))
     fi
   done < <(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}*.tar.gz 2>/dev/null | tail -n +$((BACKUP_RETENTION_MIN + 1)))
-  [[ $deleted -gt 0 ]] && ok "오래된 백업 ${deleted}개 삭제 (${BACKUP_RETENTION_DAYS}일 초과, 최소 ${BACKUP_RETENTION_MIN}개 보존)"
+  [[ $deleted -gt 0 ]] && ok "Deleted ${deleted} old backups (older than ${BACKUP_RETENTION_DAYS}d, newest ${BACKUP_RETENTION_MIN} always kept)"
 fi
 
 count="$(ls -1 "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
-info "현재 보관 중인 백업: ${count}개"
+info "Backups on hand: ${count}"

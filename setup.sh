@@ -15,60 +15,60 @@ missing=()
 
 hr() { printf '%s\n' "------------------------------------------------------------"; }
 
-info "환경 점검을 시작합니다"
+info "Checking your environment"
 hr
 
 # ------------------------------------------------------------ 1. CPU architecture
 arch="$(uname -m)"
 if [[ "$arch" == "arm64" ]]; then
-  ok "Apple Silicon (arm64) 확인"
+  ok "Apple Silicon (arm64)"
 else
-  warn "arm64 가 아닙니다 ($arch). Intel Mac 이면 Rosetta 단계는 건너뛰어도 됩니다."
+  warn "Not arm64 ($arch). On an Intel Mac you can skip the Rosetta step."
 fi
 
 # --------------------------------------------------------------- 2. Rosetta 2
 # steamcmd and most Wine builds are x86_64, so Rosetta 2 is required.
 if [[ "$arch" == "arm64" ]]; then
   if /usr/bin/pgrep -q oahd || [[ -d /Library/Apple/usr/libexec/oah ]]; then
-    ok "Rosetta 2 설치됨"
+    ok "Rosetta 2 installed"
   else
-    warn "Rosetta 2 미설치"
+    warn "Rosetta 2 not installed"
     missing+=("rosetta")
   fi
 fi
 
 # --------------------------------------------------------------- 3. Homebrew
 if command -v brew >/dev/null 2>&1; then
-  ok "Homebrew 설치됨 ($(brew --prefix))"
+  ok "Homebrew installed ($(brew --prefix))"
 else
-  warn "Homebrew 미설치"
+  warn "Homebrew not installed"
   missing+=("brew")
 fi
 
 # ---------------------------------------------------------------- 4. steamcmd
 if [[ -x "$STEAMCMD_DIR/steamcmd.sh" ]]; then
-  ok "steamcmd 설치됨 ($STEAMCMD_DIR/steamcmd.sh)"
+  ok "steamcmd installed ($STEAMCMD_DIR/steamcmd.sh)"
 elif command -v steamcmd >/dev/null 2>&1; then
-  ok "steamcmd 설치됨 (PATH: $(command -v steamcmd))"
+  ok "steamcmd installed (PATH: $(command -v steamcmd))"
 else
-  warn "steamcmd 미설치"
+  warn "steamcmd not installed"
   missing+=("steamcmd")
 fi
 
 # --------------------------------------------------------------------- 5. Wine
 if detect_wine; then
-  ok "Wine 발견: $WINE_BIN"
+  ok "Wine found: $WINE_BIN"
 else
-  warn "Wine 미설치 (Windows 빌드 구동에 필수)"
+  warn "Wine not installed (required to run the Windows build)"
   missing+=("wine")
 fi
 
 # ------------------------------------------------------------------ 6. Extras
 for tool in tmux lsof python3; do
   if command -v "$tool" >/dev/null 2>&1; then
-    ok "$tool 사용 가능"
+    ok "$tool available"
   else
-    warn "$tool 없음 (일부 기능 제한)"
+    warn "$tool missing (some features limited)"
   fi
 done
 
@@ -77,11 +77,11 @@ hr
 # ============================================================ Guidance / install
 if [[ ${#missing[@]} -eq 0 ]]; then
   ensure_dirs
-  ok "모든 사전 요구사항 충족. 다음 단계: ./install_update.sh"
+  ok "All prerequisites met. Next: ./install_update.sh"
   exit 0
 fi
 
-info "빠진 항목: ${missing[*]}"
+info "Missing: ${missing[*]}"
 echo
 
 for item in "${missing[@]}"; do
@@ -89,25 +89,25 @@ for item in "${missing[@]}"; do
     rosetta)
       cat <<'EOS'
 [Rosetta 2]
-  Apple Silicon 에서 x86_64 바이너리(steamcmd, Wine)를 돌리기 위해 필요합니다.
-  설치 명령:
+  Needed to run x86_64 binaries (steamcmd, Wine) on Apple Silicon.
+  Install with:
 
     softwareupdate --install-rosetta --agree-to-license
 
 EOS
       if [[ $AUTO_INSTALL -eq 1 ]]; then
-        info "Rosetta 2 설치 중..."
+        info "Installing Rosetta 2..."
         softwareupdate --install-rosetta --agree-to-license
       fi
       ;;
     brew)
       cat <<'EOS'
 [Homebrew]
-  설치 명령:
+  Install with:
 
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-  설치 후 PATH 등록(Apple Silicon):
+  Then add it to PATH (Apple Silicon):
     echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && exec zsh
 
 EOS
@@ -115,61 +115,61 @@ EOS
     steamcmd)
       cat <<EOS
 [steamcmd]
-  Homebrew cask 'steamcmd' 는 현재 환경에서 정의 오류가 있어,
-  Valve 공식 tarball 직접 설치를 권장합니다:
+  The Homebrew cask 'steamcmd' currently has a broken definition, so installing
+  Valve's official tarball directly is recommended:
 
     mkdir -p "$STEAMCMD_DIR" && cd "$STEAMCMD_DIR"
     curl -sSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz | tar zxvf -
 
-  (이 스크립트를 --install 로 실행하면 위 작업을 대신 수행합니다)
+  (Running this script with --install does the above for you)
 
 EOS
       if [[ $AUTO_INSTALL -eq 1 ]]; then
-        info "steamcmd 다운로드 중..."
+        info "Downloading steamcmd..."
         mkdir -p "$STEAMCMD_DIR"
         curl -sSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz \
           | tar zxf - -C "$STEAMCMD_DIR"
         chmod +x "$STEAMCMD_DIR/steamcmd.sh"
-        ok "steamcmd 설치 완료: $STEAMCMD_DIR/steamcmd.sh"
+        ok "steamcmd installed: $STEAMCMD_DIR/steamcmd.sh"
       fi
       ;;
     wine)
       cat <<'EOS'
-[Wine 호환 레이어] — 아래 중 하나를 고르세요. (권장순)
+[Wine compatibility layer] — pick one (in recommended order)
 
-  A) Game Porting Toolkit — Gcenx 재패키징판  ★무료, 현재 최선★
+  A) Game Porting Toolkit — Gcenx repackaging   ★free, currently the best★
        brew tap gcenx/wine
        brew install --cask game-porting-toolkit
 
-     · 무료. Apple 개발자 계정도, Xcode 도, x86_64 Homebrew 도 필요 없습니다.
-       (그 조건들은 Apple 공식 formula 얘기이고 이 cask 에는 해당 없음)
-     · 설치 시 quarantine 속성을 떼고 ad-hoc 코드서명을 다시 합니다.
-       → 공식 WineHQ cask 들을 막아버린 Gatekeeper 문제를 우회합니다.
-     · wine64 / wineserver 를 brew bin 에 링크하므로 자동 탐색이 바로 잡습니다.
-     설치 후 WINE_BIN: $(brew --prefix)/bin/wine64
+     - Free. No Apple developer account, no Xcode, no x86_64 Homebrew.
+       (Those requirements apply to Apple's official formula, not this cask.)
+     - Installation strips the quarantine attribute and re-signs ad-hoc,
+       sidestepping the Gatekeeper problem that killed the official WineHQ casks.
+     - Links wine64 / wineserver into brew's bin, so auto-detection finds it.
+     WINE_BIN afterwards: $(brew --prefix)/bin/wine64
 
-  B) CrossOver — 유료 (연 구독, 14일 체험판)
+  B) CrossOver — paid (annual subscription, 14-day trial)
        brew install --cask crossover
-     · 상용 지원과 GUI 관리 도구가 필요할 때. 서버 성능 자체는 A 와 동일합니다.
-     설치 후 WINE_BIN:
+     - For commercial support and a GUI. Server performance is identical to A.
+     WINE_BIN afterwards:
        /Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine
 
-  C) Gcenx 순정 Wine 빌드 (무료, 수동 설치) — A 가 실패할 때의 대안
+  C) Gcenx plain Wine builds (free, manual) — fallback if A fails
        https://github.com/Gcenx/macOS_Wine_builds/releases
-       wine-staging-<버전>-osx64.tar.xz 를 받아 압축을 풀고,
-       xattr -drs com.apple.quarantine <풀어낸경로>
-     설치 후 WINE_BIN 은 압축을 푼 경로의 bin/wine64
+       Download wine-staging-<version>-osx64.tar.xz, extract it, then:
+       xattr -drs com.apple.quarantine <extracted path>
+     WINE_BIN is bin/wine64 inside the extracted folder
 
-  ※ 공식 WineHQ cask(wine-stable, wine@devel, wine@staging)는 macOS Gatekeeper
-     검사를 통과하지 못해 deprecated 되었고 2026-09-01 에 비활성화됩니다. 쓰지 마세요.
-  ※ gcenx/wine 탭의 wine-crossover cask 는 없어졌습니다 (A 로 대체됨).
-  ※ Whisky 는 개발이 중단되어 권장하지 않습니다.
-  ※ Box64 는 ARM Linux 용이라 macOS 에서는 해당 사항이 없습니다.
+  NOTE: The official WineHQ casks (wine-stable, wine@devel, wine@staging) fail the
+     macOS Gatekeeper check, are deprecated, and will be disabled on 2026-09-01.
+  NOTE: The wine-crossover cask is gone from the gcenx/wine tap (A replaces it).
+  NOTE: Whisky is discontinued and not recommended.
+  NOTE: Box64 targets ARM Linux and does not apply on macOS.
 
-  ※ 참고: GPTK 의 강점인 D3DMetal(Direct3D→Metal)은 헤드리스인 PalServer 에는
-     쓰이지 않습니다. A 를 1순위로 둔 이유는 성능이 아니라 "무료 + 설치가 깨끗함"입니다.
+  NOTE: GPTK's strength, D3DMetal (Direct3D to Metal), is unused by the headless
+     PalServer. A ranks first for being free and installing cleanly, not for speed.
 
-  설치 후 config.local.sh 에 경로를 명시하세요:
+  Afterwards, record the path in config.local.sh:
        echo 'WINE_BIN="/your/path/to/wine"' >> config.local.sh
 
 EOS
@@ -179,9 +179,9 @@ done
 
 hr
 if [[ $AUTO_INSTALL -eq 1 ]]; then
-  info "자동 설치 가능한 항목을 처리했습니다. 다시 ./setup.sh 로 확인하세요."
+  info "Handled what could be automated. Run ./setup.sh again to re-check."
 else
-  info "위 명령들을 실행한 뒤 ./setup.sh 를 다시 실행하세요."
-  info "(Rosetta/steamcmd 자동 설치: ./setup.sh --install)"
+  info "Run the commands above, then run ./setup.sh again."
+  info "(Automatic Rosetta/steamcmd install: ./setup.sh --install)"
 fi
 exit 1

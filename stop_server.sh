@@ -22,7 +22,7 @@ case "${1:-}" in
   --now)   DELAY=1 ;;
   --force) FORCE=1 ;;
   "")      ;;
-  *)       die "알 수 없는 옵션: $1 (--now | --force)" ;;
+  *)       die "Unknown option: $1 (--now | --force)" ;;
 esac
 
 # ------------------------------------------------------------ Resolve target PID
@@ -30,18 +30,18 @@ pid="$(server_pid || true)"
 if [[ -z "$pid" ]]; then
   pid="$(server_pid_by_name || true)"
   if [[ -n "$pid" ]]; then
-    warn "PID 파일과 실제 프로세스가 어긋납니다. 이름으로 찾은 PID $pid 를 종료합니다."
+    warn "The PID file disagrees with reality. Stopping PID $pid, found by name."
   fi
 fi
 
 if [[ -z "$pid" ]]; then
   rm -f "$PID_FILE"
-  ok "실행 중인 서버가 없습니다."
+  ok "No server is running."
   exit 0
 fi
 
-info "종료 대상 PID: $pid"
-audit "stop 시작 pid=$pid"
+info "Target PID: $pid"
+audit "stop begin pid=$pid"
 
 # Wait up to N seconds for the process to disappear
 wait_gone() {
@@ -55,54 +55,54 @@ wait_gone() {
 
 # ------------------------------------------------ Stage 1: graceful via RCON
 if [[ -n "$RCON_PASSWORD" ]]; then
-  info "RCON 으로 세이브 후 종료를 시도합니다 (예고 ${DELAY}초)"
+  info "Trying RCON: save, then shut down (${DELAY}s warning)"
   if rcon_cmd "Save" >/dev/null 2>&1; then
-    ok "월드 세이브 플러시 완료"
+    ok "World save flushed"
     # Shutdown <seconds> <message>: warn players, then stop cleanly
     rcon_cmd "Shutdown ${DELAY} Server_is_shutting_down" >/dev/null 2>&1 || true
     if wait_gone "$pid" $((DELAY + 45)); then
       rm -f "$PID_FILE"
-      audit "stop 완료 (RCON)"
-      ok "RCON 정상 종료 완료 — 세이브 안전"
+      audit "stop done (RCON)"
+      ok "Clean RCON shutdown — save is safe"
       exit 0
     fi
-    warn "RCON 종료가 시간 내에 끝나지 않았습니다. 시그널로 전환합니다."
+    warn "RCON shutdown did not finish in time. Falling back to signals."
   else
-    warn "RCON 연결 실패 (RCONEnabled/AdminPassword 확인). 시그널로 전환합니다."
+    warn "RCON connection failed (check RCONEnabled/AdminPassword). Falling back to signals."
   fi
 else
-  warn "RCON_PASSWORD 미설정 — 시그널 종료를 사용합니다."
-  warn "가장 안전한 종료를 위해 config.local.sh 에 RCON_PASSWORD 를 설정하세요."
+  warn "RCON_PASSWORD is not set — using signal shutdown."
+  warn "For the safest shutdown, set RCON_PASSWORD in config.local.sh."
 fi
 
 # ---------------------------------------------------- Stage 2: SIGINT
-info "SIGINT 전송 (최대 60초 대기)"
+info "Sending SIGINT (waiting up to 60s)"
 kill -INT "$pid" 2>/dev/null || true
 if wait_gone "$pid" 60; then
   rm -f "$PID_FILE"
-  audit "stop 완료 (SIGINT)"
-  ok "SIGINT 로 정상 종료되었습니다."
+  audit "stop done (SIGINT)"
+  ok "Stopped cleanly via SIGINT."
   exit 0
 fi
 
 # --------------------------------------------------------- Stage 3: SIGTERM
-warn "SIGINT 무응답. SIGTERM 전송 (최대 45초 대기)"
+warn "No response to SIGINT. Sending SIGTERM (waiting up to 45s)"
 kill -TERM "$pid" 2>/dev/null || true
 if wait_gone "$pid" 45; then
   rm -f "$PID_FILE"
-  audit "stop 완료 (SIGTERM)"
-  ok "SIGTERM 으로 종료되었습니다."
+  audit "stop done (SIGTERM)"
+  ok "Stopped via SIGTERM."
   exit 0
 fi
 
 # ------------------------------------------- Stage 4: SIGKILL (last resort)
 if [[ $FORCE -eq 0 ]]; then
-  audit "stop 교착 pid=$pid"
-  die "프로세스가 응답하지 않습니다 (PID $pid).
-    강제 종료는 세이브 손상 위험이 있습니다. 감수하려면: ./stop_server.sh --force"
+  audit "stop stuck pid=$pid"
+  die "The process is not responding (PID $pid).
+    Forcing it risks a damaged save. To accept that: ./stop_server.sh --force"
 fi
 
-warn "SIGKILL 강제 종료 — 최근 진행분이 유실될 수 있습니다."
+warn "Forcing SIGKILL — recent progress may be lost."
 kill -KILL "$pid" 2>/dev/null || true
 sleep 2
 
@@ -114,5 +114,5 @@ pkill -9 -f 'PalServer-Win64-Shipping\.exe|PalServer\.exe' 2>/dev/null || true
 
 rm -f "$PID_FILE"
 tmux kill-session -t palworld 2>/dev/null || true
-audit "stop 완료 (SIGKILL 강제)"
-warn "강제 종료 완료. 다음 기동 전 ./backup_save.sh 로 세이브 상태를 확인하세요."
+audit "stop done (forced SIGKILL)"
+warn "Force-stopped. Check the save with ./backup_save.sh before starting again."

@@ -447,7 +447,7 @@ CLI로도 같은 작업을 할 수 있습니다.
   `python3` 를 찾을 수 있도록 `PATH` 를 명시적으로 주입합니다.
 - 서명은 ad-hoc 입니다. 로컬 빌드라 quarantine 속성이 붙지 않아 Gatekeeper 경고
   없이 실행되지만, 이 `.app` 을 **다른 맥으로 복사하면** 경고가 뜹니다.
-  그때는 받는 쪽에서 `xattr -dr com.apple.quarantine "/Applications/Palworld 서버.app"`.
+  그때는 받는 쪽에서 `xattr -dr com.apple.quarantine "/Applications/Palworld Server.app"`.
 - 스크립트 폴더 위치는 빌드 시 `Info.plist` 에 기록되며, 앱의 설정(⚙️)에서 바꿀 수
   있습니다. 스크립트 폴더를 옮겼다면 여기서 새 경로를 지정하세요.
 

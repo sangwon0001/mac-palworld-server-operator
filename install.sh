@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
     --no-app)  BUILD_APP=0; shift ;;
     --check)   CHECK_ONLY=1; shift ;;
     -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) printf '알 수 없는 옵션: %s\n' "$1" >&2; exit 1 ;;
+    *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
   esac
 done
 
@@ -41,9 +41,9 @@ c_ylw=$'\033[33m'; c_blu=$'\033[34m'; c_dim=$'\033[2m'; c_bold=$'\033[1m'
 
 step()  { printf '\n%s▶ [%s/%s] %s%s\n' "$c_bold$c_blu" "$1" "$TOTAL_STEPS" "$2" "$c_rst"; }
 ok()    { printf '  %s✔%s %s\n' "$c_grn" "$c_rst" "$*"; }
-skip()  { printf '  %s·%s %s %s(이미 완료 — 건너뜀)%s\n' "$c_dim" "$c_rst" "$*" "$c_dim" "$c_rst"; }
+skip()  { printf '  %s·%s %s %s(already done — skipped)%s\n' "$c_dim" "$c_rst" "$*" "$c_dim" "$c_rst"; }
 warn()  { printf '  %s⚠%s %s\n' "$c_ylw" "$c_rst" "$*" >&2; }
-die()   { printf '\n%s✘ 설치 중단%s %s\n' "$c_red" "$c_rst" "$*" >&2; exit 1; }
+die()   { printf '\n%s✘ Install aborted%s %s\n' "$c_red" "$c_rst" "$*" >&2; exit 1; }
 note()  { printf '    %s%s%s\n' "$c_dim" "$*" "$c_rst"; }
 
 confirm() {
@@ -56,11 +56,11 @@ confirm() {
 TOTAL_STEPS=7
 
 # ============================================================ Preflight
-printf '%s╔════════════════════════════════════════════════════════════╗%s\n' "$c_bold" "$c_rst"
-printf '%s║   팰월드 전용 서버 설치 프로그램  (macOS / Apple Silicon)  ║%s\n' "$c_bold" "$c_rst"
-printf '%s╚════════════════════════════════════════════════════════════╝%s\n' "$c_bold" "$c_rst"
+printf '%s╔════════════════════════════════════════════════════════════════╗%s\n' "$c_bold" "$c_rst"
+printf '%s║   Palworld Dedicated Server installer (macOS / Apple Silicon)  ║%s\n' "$c_bold" "$c_rst"
+printf '%s╚════════════════════════════════════════════════════════════════╝%s\n' "$c_bold" "$c_rst"
 
-[[ "$(uname -s)" == "Darwin" ]] || die "macOS 전용입니다."
+[[ "$(uname -s)" == "Darwin" ]] || die "macOS only."
 
 # --- Is python3 actually runnable? (Command Line Tools) ----------------------
 # On a fresh Mac /usr/bin/python3 exists as a file but is a stub: running it only
@@ -69,10 +69,10 @@ printf '%s╚══════════════════════�
 # The RCON client (config.sh), status queries and settings editing all depend on
 # python3, so without it the install would finish with its core features broken.
 if ! python3 -c 'pass' >/dev/null 2>&1; then
-  printf '\n%s✘ Command Line Tools 가 필요합니다%s\n\n' "$c_red" "$c_rst"
-  printf '  python3 를 실행할 수 없습니다. 이 도구 모음은 RCON 안전 종료·상태 조회·\n'
-  printf '  설정 편집에 python3 를 사용합니다.\n\n'
-  printf '  아래를 실행해 설치를 마친 뒤 다시 시도하세요 (대화상자가 뜹니다):\n\n'
+  printf '\n%s✘ The Xcode Command Line Tools are required%s\n\n' "$c_red" "$c_rst"
+  printf '  python3 cannot be run. This toolkit uses it for RCON safe shutdown,\n'
+  printf '  status queries and settings editing.\n\n'
+  printf '  Run the following, finish the installer dialog, then try again:\n\n'
   printf '    xcode-select --install\n\n'
   exit 1
 fi
@@ -92,16 +92,16 @@ print("  " + label + " " * max(1, width - disp) + value)
 
 # Shared by --check and the final summary
 print_state() {
-  local wine_state="미설치"
+  local wine_state="not installed"
   detect_wine 2>/dev/null && wine_state="$WINE_BIN"
-  printf '\n%s현재 설치 상태%s\n' "$c_bold" "$c_rst"
-  kv "Rosetta 2" "$(/usr/bin/pgrep -q oahd && echo '설치됨' || echo '미설치')"
-  kv "Homebrew"  "$(command -v brew >/dev/null && brew --prefix || echo '미설치')"
+  printf '\n%sCurrent state%s\n' "$c_bold" "$c_rst"
+  kv "Rosetta 2" "$(/usr/bin/pgrep -q oahd && echo 'installed' || echo 'not installed')"
+  kv "Homebrew"  "$(command -v brew >/dev/null && brew --prefix || echo 'not installed')"
   kv "Wine"      "$wine_state"
-  kv "SteamCMD"  "$([[ -x "$STEAMCMD_DIR/steamcmd.sh" ]] && echo "$STEAMCMD_DIR" || echo '미설치')"
-  kv "서버 본체"  "$([[ -f "$PAL_EXE_SHIPPING" ]] && du -sh "$PAL_ROOT" 2>/dev/null | cut -f1 || echo '미설치')"
-  kv "개인 설정"  "$([[ -f config.local.sh ]] && echo '있음' || echo '없음')"
-  kv "GUI 앱"    "$([[ -d "/Applications/Palworld 서버.app" ]] && echo '설치됨' || echo '미설치')"
+  kv "SteamCMD"  "$([[ -x "$STEAMCMD_DIR/steamcmd.sh" ]] && echo "$STEAMCMD_DIR" || echo 'not installed')"
+  kv "Server"    "$([[ -f "$PAL_EXE_SHIPPING" ]] && du -sh "$PAL_ROOT" 2>/dev/null | cut -f1 || echo 'not installed')"
+  kv "Local config" "$([[ -f config.local.sh ]] && echo 'present' || echo 'absent')"
+  kv "GUI app"   "$([[ -d "/Applications/Palworld Server.app" ]] && echo 'installed' || echo 'not installed')"
 }
 
 if [[ $CHECK_ONLY -eq 1 ]]; then
@@ -118,68 +118,68 @@ done
 [[ -f config.local.sh ]] && chmod 600 config.local.sh
 
 # ============================================================ 1. Rosetta 2
-step 1 "Rosetta 2 확인"
+step 1 "Checking Rosetta 2"
 if [[ "$(uname -m)" != "arm64" ]]; then
-  ok "Intel Mac — Rosetta 불필요"
+  ok "Intel Mac — Rosetta not needed"
 elif /usr/bin/pgrep -q oahd || [[ -d /Library/Apple/usr/libexec/oah ]]; then
   skip "Rosetta 2"
 else
-  warn "Rosetta 2 가 필요합니다 (Wine 과 Windows 서버 바이너리 구동에 필수)."
-  note "설치 시 관리자 암호를 물어볼 수 있습니다."
-  if confirm "지금 설치할까요?"; then
-    softwareupdate --install-rosetta --agree-to-license || die "Rosetta 설치 실패"
-    ok "Rosetta 2 설치 완료"
+  warn "Rosetta 2 is required (Wine and the Windows server binary both need it)."
+  note "You may be asked for your administrator password."
+  if confirm "Install it now?"; then
+    softwareupdate --install-rosetta --agree-to-license || die "Rosetta install failed"
+    ok "Rosetta 2 installed"
   else
-    die "Rosetta 2 없이는 진행할 수 없습니다."
+    die "Cannot continue without Rosetta 2."
   fi
 fi
 
 # ============================================================ 2. Homebrew
-step 2 "Homebrew 확인"
+step 2 "Checking Homebrew"
 if command -v brew >/dev/null 2>&1; then
   skip "Homebrew ($(brew --prefix))"
 else
-  warn "Homebrew 가 없습니다. 보안상 이 스크립트가 대신 설치하지 않습니다."
-  printf '\n  아래 명령을 직접 실행한 뒤 이 스크립트를 다시 실행하세요:\n\n'
+  warn "Homebrew is missing. For safety this script will not install it for you."
+  printf '\n  Run this yourself, then run this script again:\n\n'
   printf '    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\n\n'
-  die "Homebrew 필요"
+  die "Homebrew required"
 fi
 
 # ============================================================ 3. Wine
-step 3 "Wine 호환 레이어 확인"
+step 3 "Checking the Wine compatibility layer"
 if detect_wine 2>/dev/null; then
   skip "Wine ($WINE_BIN)"
 else
-  note "무료 배포판인 Gcenx 재패키징 Game Porting Toolkit 을 설치합니다."
-  note "공식 WineHQ cask 들은 Gatekeeper 검사 실패로 2026-09-01 비활성화 예정이라 쓰지 않습니다."
-  note "설치 중 서드파티 탭 신뢰(brew trust)가 필요합니다 — 해당 저장소의 코드 실행을 허용한다는 뜻입니다."
-  if confirm "Wine 을 설치할까요? (약 220MB)"; then
+  note "Installing the free Gcenx repackaging of Apple's Game Porting Toolkit."
+  note "The official WineHQ casks fail Gatekeeper and are disabled on 2026-09-01, so they are not used."
+  note "This requires trusting a third-party tap (brew trust) — it permits running code from that repository."
+  if confirm "Install Wine? (about 220MB)"; then
     brew tap gcenx/wine 2>&1 | tail -2 || true
     brew trust gcenx/wine 2>&1 | tail -1 || true
     brew install --cask game-porting-toolkit 2>&1 | tail -3 \
-      || die "Wine 설치 실패. 수동 설치는 ./setup.sh 안내를 참고하세요."
-    detect_wine || die "설치는 됐지만 wine 실행 파일을 찾지 못했습니다."
-    ok "Wine 설치 완료 ($("$WINE_BIN" --version 2>/dev/null | head -1))"
+      || die "Wine install failed. See ./setup.sh for manual instructions."
+    detect_wine || die "Installed, but the wine executable could not be found."
+    ok "Wine installed ($("$WINE_BIN" --version 2>/dev/null | head -1))"
   else
-    die "Wine 없이는 서버를 구동할 수 없습니다."
+    die "The server cannot run without Wine."
   fi
 fi
 
 # ============================================================ 4. SteamCMD
-step 4 "SteamCMD 확인"
+step 4 "Checking SteamCMD"
 if [[ -x "$STEAMCMD_DIR/steamcmd.sh" ]]; then
   skip "SteamCMD ($STEAMCMD_DIR)"
 else
-  note "Homebrew cask 'steamcmd' 는 정의 오류가 있어 Valve 공식 tarball 을 직접 받습니다."
+  note "The Homebrew 'steamcmd' cask is broken, so Valve's official tarball is used instead."
   mkdir -p "$STEAMCMD_DIR"
   curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz \
-    | tar zxf - -C "$STEAMCMD_DIR" || die "SteamCMD 다운로드 실패"
+    | tar zxf - -C "$STEAMCMD_DIR" || die "SteamCMD download failed"
   chmod +x "$STEAMCMD_DIR/steamcmd.sh"
-  ok "SteamCMD 설치 완료"
+  ok "SteamCMD installed"
 fi
 
 # ============================================================ 5. Local settings
-step 5 "개인 설정 생성"
+step 5 "Creating local settings"
 if [[ -f config.local.sh ]]; then
   skip "config.local.sh"
 else
@@ -197,18 +197,18 @@ WINE_BIN="${WINE_BIN}"
 RCON_PASSWORD="${PW}"
 EOF
   chmod 600 config.local.sh
-  ok "config.local.sh 생성 (권한 600)"
-  note "생성된 RCON 비밀번호: $PW"
+  ok "Created config.local.sh (mode 600)"
+  note "Generated RCON password: $PW"
 fi
 
 # ============================================================ 6. The server
-step 6 "팰월드 서버 설치"
+step 6 "Installing the Palworld server"
 if [[ -f "$PAL_EXE_SHIPPING" ]]; then
-  skip "서버 본체 ($(du -sh "$PAL_ROOT" 2>/dev/null | cut -f1))"
+  skip "Server files ($(du -sh "$PAL_ROOT" 2>/dev/null | cut -f1))"
 else
-  note "약 5.6GB 를 내려받습니다. 회선에 따라 10~30분 걸릴 수 있습니다."
-  confirm "지금 다운로드할까요?" || die "서버 본체 없이는 사용할 수 없습니다."
-  ./install_update.sh || die "서버 설치 실패"
+  note "This downloads about 5.6GB; expect 10-30 minutes depending on your connection."
+  confirm "Download it now?" || die "Nothing works without the server files."
+  ./install_update.sh || die "Server install failed"
 fi
 
 # --- Write RCON settings into the ini, but only if it is still unset ---
@@ -223,25 +223,25 @@ s = s.replace('AdminPassword=""', f'AdminPassword="{pw}"')
 s = s.replace('RCONEnabled=False', 'RCONEnabled=True')
 open(p, "w", encoding="utf-8").write(s)
 PY
-    ok "PalWorldSettings.ini 에 RCON 설정 반영"
+    ok "Wrote RCON settings into PalWorldSettings.ini"
   else
-    skip "RCON 설정 (AdminPassword 가 이미 지정되어 있음)"
+    skip "RCON settings (AdminPassword is already set)"
   fi
 fi
 
 # ============================================================ 7. GUI app
-step 7 "GUI 앱 빌드 및 설치"
+step 7 "Building and installing the GUI app"
 if [[ $BUILD_APP -eq 0 ]]; then
-  skip "GUI 앱 (--no-app)"
+  skip "GUI app (--no-app)"
 elif ! command -v swiftc >/dev/null 2>&1; then
-  warn "swiftc 가 없어 앱을 빌드할 수 없습니다. CLI 는 정상 사용 가능합니다."
-  note "앱이 필요하면: xcode-select --install 후 'cd app && ./build.sh --install'"
+  warn "swiftc is missing, so the app cannot be built. The CLI works fine."
+  note "To get the app: xcode-select --install, then 'cd app && ./build.sh --install'"
 else
-  if confirm "메뉴 막대 GUI 앱을 빌드해 /Applications 에 설치할까요?"; then
-    ( cd app && ./build.sh --install ) || warn "앱 빌드 실패 — CLI 는 정상 사용 가능합니다."
-    [[ -d "/Applications/Palworld 서버.app" ]] && ok "GUI 앱 설치 완료"
+  if confirm "Build the menu bar app and install it into /Applications?"; then
+    ( cd app && ./build.sh --install ) || warn "App build failed — the CLI works fine."
+    [[ -d "/Applications/Palworld Server.app" ]] && ok "GUI app installed"
   else
-    skip "GUI 앱"
+    skip "GUI app"
   fi
 fi
 
@@ -250,22 +250,22 @@ print_state
 
 cat <<EOF
 
-$c_bold$c_grn설치 완료$c_rst
+$c_bold${c_grn}Installation complete$c_rst
 
-  서버 시작    ./start_server.sh          또는 GUI 앱의 '서버 시작'
-  상태 확인    ./status.sh
-  안전 종료    ./stop_server.sh
-  백업         ./backup_save.sh
+  Start        ./start_server.sh          (or Start Server in the app)
+  Status       ./status.sh
+  Safe stop    ./stop_server.sh
+  Back up      ./backup_save.sh
 
-$c_bold다음으로 할 만한 것$c_rst
-  · 서버 이름/난이도 등 설정 편집
+${c_bold}Worth doing next$c_rst
+  - Edit settings such as the server name and difficulty
       open -e "$SETTINGS_INI"
-  · 정기 백업 + 자동 재시작 등록 (메모리 누수 대응)
+  - Schedule backups and automatic restarts (for the memory leak)
       ./install_cron.sh --install
-  · 접속 주소 확인 (내부망 · 외부 모두)
+  - Check the addresses players connect to (LAN and external)
       ./status.sh --address
-      같은 공유기 안: $(lan_ip 2>/dev/null || echo '확인 불가'):$GAME_PORT
-  · 외부 접속을 받으려면 공유기에서 UDP $GAME_PORT 포트포워딩
+      Same network: $(lan_ip 2>/dev/null || echo 'unavailable'):$GAME_PORT
+  - For external access, forward UDP $GAME_PORT on your router
 
-$c_dim자세한 내용은 README.md 를 참고하세요.$c_rst
+${c_dim}See README.md for details.$c_rst
 EOF

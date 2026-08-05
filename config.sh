@@ -127,7 +127,7 @@ public_ip() {
 # --- Wine discovery ----------------------------------------------------------
 detect_wine() {
   if [[ -n "$WINE_BIN" ]]; then
-    [[ -x "$WINE_BIN" ]] || die "WINE_BIN 경로가 실행 가능하지 않습니다: $WINE_BIN"
+    [[ -x "$WINE_BIN" ]] || die "WINE_BIN is not executable: $WINE_BIN"
     return 0
   fi
   # Notes on the search order:
@@ -151,7 +151,7 @@ detect_wine() {
 }
 
 require_wine() {
-  detect_wine || die "Wine 을 찾지 못했습니다. ./setup.sh 를 먼저 실행하거나 config.local.sh 에 WINE_BIN 을 지정하세요."
+  detect_wine || die "Wine not found. Run ./setup.sh first, or set WINE_BIN in config.local.sh."
 }
 
 # --- Server process state ----------------------------------------------------
@@ -197,7 +197,7 @@ def recv_exact(sock, n):
     while len(buf) < n:
         chunk = sock.recv(n - len(buf))
         if not chunk:
-            raise ConnectionError("RCON 연결이 조기에 끊겼습니다")
+            raise ConnectionError("RCON connection closed early")
         buf += chunk
     return buf
 
@@ -233,7 +233,7 @@ def read_packet(sock, timeout=8):
     size = struct.unpack("<i", recv_exact(sock, 4))[0]
     data = recv_up_to(sock, size)
     if len(data) < 8:
-        raise ConnectionError(f"RCON 응답이 너무 짧습니다 ({len(data)}바이트)")
+        raise ConnectionError(f"RCON response too short ({len(data)} bytes)")
     req_id, typ = struct.unpack("<ii", data[:8])
     # Lengths can be wrong, so strip trailing nulls by scanning rather than by count.
     return req_id, typ, data[8:].rstrip(b"\x00").decode("utf-8", "replace")

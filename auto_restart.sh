@@ -33,22 +33,22 @@ while [[ $# -gt 0 ]]; do
     --if-over)  MEM_THRESHOLD="${2:-0}"; shift 2 ;;
     --if-empty) ONLY_IF_EMPTY=1; shift ;;
     --update)   DO_UPDATE=1; shift ;;
-    *) die "알 수 없는 옵션: $1" ;;
+    *) die "Unknown option: $1" ;;
   esac
 done
 
 printf '\n'
-log "===== auto_restart 시작 (threshold=${MEM_THRESHOLD}MB, if-empty=${ONLY_IF_EMPTY}, update=${DO_UPDATE}) ====="
+log "===== auto_restart begin (threshold=${MEM_THRESHOLD}MB, if-empty=${ONLY_IF_EMPTY}, update=${DO_UPDATE}) ====="
 
 # --------------------------------------------------------------- Preconditions
 pid="$(server_pid || server_pid_by_name || true)"
 
 if [[ -z "$pid" ]]; then
   # A dead server means this is recovery, not a restart — just bring it up.
-  warn "서버가 실행 중이 아닙니다. 복구 기동을 시도합니다."
-  audit "auto_restart: 정지 상태 감지 → 복구 기동"
-  ./start_server.sh && log "복구 기동 성공" || log "복구 기동 실패"
-  log "===== auto_restart 종료 ====="
+  warn "The server is not running. Attempting a recovery start."
+  audit "auto_restart: found stopped, starting for recovery"
+  ./start_server.sh && log "Recovery start succeeded" || log "Recovery start failed"
+  log "===== auto_restart end ====="
   exit 0
 fi
 
@@ -56,32 +56,32 @@ fi
 if [[ "$MEM_THRESHOLD" -gt 0 ]]; then
   rss_kb="$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')"
   rss_mb=$(( ${rss_kb:-0} / 1024 ))
-  log "현재 메모리 사용량: ${rss_mb}MB (임계치 ${MEM_THRESHOLD}MB)"
+  log "Memory in use: ${rss_mb}MB (threshold ${MEM_THRESHOLD}MB)"
   if [[ "$rss_mb" -lt "$MEM_THRESHOLD" ]]; then
-    log "임계치 미만 — 재시작하지 않고 종료합니다."
-    log "===== auto_restart 종료 ====="
+    log "Below the threshold — exiting without restarting."
+    log "===== auto_restart end ====="
     exit 0
   fi
-  warn "메모리 임계치 초과 — 재시작을 진행합니다."
+  warn "Above the memory threshold — restarting."
 fi
 
 # Condition 2: nobody connected
 if [[ "$ONLY_IF_EMPTY" -eq 1 ]]; then
   if [[ -z "$RCON_PASSWORD" ]]; then
-    warn "--if-empty 는 RCON 이 필요합니다. RCON_PASSWORD 미설정이라 조건을 무시합니다."
+    warn "--if-empty needs RCON. RCON_PASSWORD is unset, so the condition is ignored."
   else
     players="$(rcon_cmd "ShowPlayers" 2>/dev/null || true)"
     if [[ -n "$players" ]]; then
       n=$(( $(printf '%s\n' "$players" | grep -c .) - 1 ))
       [[ $n -lt 0 ]] && n=0
-      log "현재 접속자: ${n}명"
+      log "Players connected: ${n}"
       if [[ "$n" -gt 0 ]]; then
-        log "접속자가 있어 재시작을 건너뜁니다."
-        log "===== auto_restart 종료 ====="
+        log "Players are connected — skipping the restart."
+        log "===== auto_restart end ====="
         exit 0
       fi
     else
-      warn "접속자 조회 실패 — 조건을 무시하고 진행합니다."
+      warn "Could not read the player list — ignoring the condition and proceeding."
     fi
   fi
 fi
@@ -93,19 +93,19 @@ fi
 
 # ------------------------------------------------------------------ 2) Back up first
 # Secure a point to return to before anything else can go wrong.
-log "[1/4] 세이브 백업"
+log "[1/4] Backing up the save"
 if ./backup_save.sh; then
-  log "백업 성공"
+  log "Backup succeeded"
 else
   # Pressing on after a failed backup risks data loss, so stop here.
-  die "백업 실패 — 안전을 위해 재시작을 중단합니다."
+  die "Backup failed — aborting the restart for safety."
 fi
 
 # ------------------------------------------------------------------ 3) Safe shutdown
-log "[2/4] 서버 안전 종료"
+log "[2/4] Shutting the server down safely"
 if ! ./stop_server.sh; then
-  warn "정상 종료 실패 — 강제 종료로 전환합니다."
-  ./stop_server.sh --force || die "강제 종료마저 실패했습니다. 수동 확인이 필요합니다."
+  warn "Clean shutdown failed — escalating to a forced stop."
+  ./stop_server.sh --force || die "Even the forced stop failed. Manual intervention needed."
 fi
 
 # Give the port and Wine's resources time to be released.
@@ -113,23 +113,23 @@ sleep 5
 
 # ------------------------------------------------------------- 4) Optional update
 if [[ "$DO_UPDATE" -eq 1 ]]; then
-  log "[3/4] 서버 업데이트"
-  ./install_update.sh || warn "업데이트 실패 — 기존 버전으로 기동을 계속합니다."
+  log "[3/4] Updating the server"
+  ./install_update.sh || warn "Update failed — starting the existing version instead."
 else
-  log "[3/4] 업데이트 건너뜀"
+  log "[3/4] Skipping the update"
 fi
 
 # ------------------------------------------------------------------ 5) Start again
-log "[4/4] 서버 재기동"
+log "[4/4] Starting the server again"
 if ./start_server.sh; then
-  log "재기동 성공"
-  audit "auto_restart 완료 (성공)"
+  log "Restart succeeded"
+  audit "auto_restart done (success)"
 else
   # A failed start leaves the server down — the worst outcome, so log it loudly.
-  warn "재기동 실패! 서버가 내려가 있습니다. 로그를 확인하세요: $SERVER_LOG"
-  audit "auto_restart 실패 (재기동 불가)"
-  log "===== auto_restart 종료 (실패) ====="
+  warn "Restart FAILED — the server is down. Check the log: $SERVER_LOG"
+  audit "auto_restart failed (could not restart)"
+  log "===== auto_restart end (failed) ====="
   exit 1
 fi
 
-log "===== auto_restart 종료 ====="
+log "===== auto_restart end ====="
