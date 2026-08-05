@@ -89,8 +89,18 @@ case "$MODE" in
     # only then release. Backgrounding rather than exec'ing is deliberate: in
     # `exec cmd | tee` the exec applies to the pipeline's subshell, not to this
     # shell, so it never had the meaning the old code assumed.
-    "${launch_cmd[@]}" > >(tee "$SERVER_LOG") 2>&1 &
+    # The server writes to the log directly, and a tail provides the live view.
+    # Piping through tee instead put a process between the server and the file
+    # that this script cannot wait for — on exit it was killed mid-drain and the
+    # last lines never reached the log, which in a mode that exists for reading
+    # the log is the one thing worth getting right.
+    # Log rotation moved the previous file aside, so create the new one before
+    # tailing it: the child's own redirect happens after the fork, and `tail -f`
+    # on a file that is not there yet just exits with an error.
+    : >> "$SERVER_LOG"
+    "${launch_cmd[@]}" >> "$SERVER_LOG" 2>&1 &
     fg_pid=$!
+    tail -f "$SERVER_LOG" & tail_pid=$!
     printf '%s' "$fg_pid" > "$PID_FILE"
     release_lock
 
@@ -103,6 +113,7 @@ case "$MODE" in
     # Foreground mode exists for debugging, so the server's own exit status is
     # the useful answer — don't swallow it.
     fg_rc=0; wait "$fg_pid" || fg_rc=$?
+    kill "$tail_pid" 2>/dev/null || true
 
     # Only clear the PID file if it is still ours. A start that happened while
     # this server was shutting down owns it now, and deleting its entry would

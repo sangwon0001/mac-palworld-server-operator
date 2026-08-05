@@ -48,3 +48,9 @@ jobs:
           ./status.sh --json --no-rcon > /tmp/status.json
           cat /tmp/status.json
           python3 -c "import json; json.load(open('/tmp/status.json'))"
+
+      # uninstall.sh deletes save games, and the run lock is what keeps two
+      # operations off the same files. These run entirely against throwaway
+      # directories.
+      - name: Safety regression tests
+        run: ./tests/safety_tests.sh
