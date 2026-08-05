@@ -102,6 +102,14 @@ if [[ $DO_SERVER -eq 1 && $DO_BACKUPS -eq 0 && "$BACKUP_DIR/" == "$PAL_ROOT/"* ]
     server:  $PAL_ROOT
     Move the backups elsewhere first, or say --backups if you mean to lose them."
 fi
+# And the other way round, for the same reason.
+if [[ $DO_BACKUPS -eq 1 && $DO_SERVER -eq 0 && "$PAL_ROOT/" == "$BACKUP_DIR/"* ]]; then
+  die "The server folder sits inside the backup folder, so clearing the backups
+    would take the server and its save with it:
+    backups: $BACKUP_DIR
+    server:  $PAL_ROOT
+    Move one of them, or say --server as well if you mean to remove both."
+fi
 
 if [[ $ASSUME_YES -eq 0 ]]; then
   printf '\nContinue? [y/N] '
