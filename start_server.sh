@@ -93,10 +93,21 @@ case "$MODE" in
     fg_pid=$!
     printf '%s' "$fg_pid" > "$PID_FILE"
     release_lock
+
+    # The server is a background child now, so a signal aimed at this script no
+    # longer reaches it on its own. (A terminal Ctrl-C still does, via the process
+    # group; an explicit `kill` from a supervisor does not.)
+    trap 'kill -INT  "$fg_pid" 2>/dev/null' INT
+    trap 'kill -TERM "$fg_pid" 2>/dev/null' TERM
+
     # Foreground mode exists for debugging, so the server's own exit status is
     # the useful answer — don't swallow it.
     fg_rc=0; wait "$fg_pid" || fg_rc=$?
-    rm -f "$PID_FILE"
+
+    # Only clear the PID file if it is still ours. A start that happened while
+    # this server was shutting down owns it now, and deleting its entry would
+    # hide a running server from the next double-start check.
+    [[ "$(cat "$PID_FILE" 2>/dev/null)" == "$fg_pid" ]] && rm -f "$PID_FILE"
     exit "$fg_rc"
     ;;
 

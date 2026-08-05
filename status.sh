@@ -23,7 +23,15 @@ source ./config.sh
 # invalid JSON — which the app cannot decode, so the whole status panel freezes
 # rather than showing one odd name.
 json_str() {
-  local s="${1//\\/\\\\}"
+  local s="$1"
+  # JSON has to be valid UTF-8, and a byte sequence that is not gets passed
+  # straight through by every substitution below. iconv -c drops exactly those
+  # bytes and leaves valid text — including Korean and Japanese — untouched. Only
+  # reached when the string has high bytes at all, so ASCII pays nothing.
+  if [[ "$s" == *[$'\200'-$'\377']* ]]; then
+    s="$(printf '%s' "$s" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null)" || s="$1"
+  fi
+  s="${s//\\/\\\\}"
   s="${s//\"/\\\"}"
   s="${s//$'\t'/\\t}"
   s="${s//$'\r'/\\r}"

@@ -148,6 +148,20 @@ LOCK_WAIT="${LOCK_WAIT:-300}"          # seconds to wait for a busy lock
 # Process start time, as ps reports it. Empty for a PID that no longer exists.
 _proc_started() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' '; }
 
+# Is the process named in an owner token still the one that took the lock?
+#   alive + same start time  -> live holder
+#   not alive                -> stale
+#   alive + different start  -> the PID was recycled, so also stale
+# The order matters: a start time that reads back empty must not by itself
+# condemn a live holder, or a hiccup in ps would hand the lock to a second writer.
+_owner_alive() {
+  local pid="$1" want="$2" now
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  now="$(_proc_started "$pid")"
+  [[ -z "$now" || "$now" == "$want" ]]
+}
+
 release_lock() {
   # Only the process that took the lock may drop it.
   [[ "${PAL_LOCK_HELD:-}" == "$$" ]] || return 0
@@ -163,16 +177,34 @@ acquire_lock() {
   mkdir -p "$RUN_DIR"
   token="$$|$(_proc_started $$)|$label"
 
+  # Anything at this path that is not a symlink cannot be a lock this code made,
+  # and would make `ln -s` fail forever. (An earlier version of this toolkit used
+  # a directory here, so an interrupted run of it can leave one behind.)
+  if [[ -e "$LOCK_LINK" && ! -L "$LOCK_LINK" ]]; then
+    warn "Removing a lock left in an old format: $LOCK_LINK"
+    rm -rf "$LOCK_LINK"
+  fi
+
   while ! ln -s "$token" "$LOCK_LINK" 2>/dev/null; do
     owner="$(readlink "$LOCK_LINK" 2>/dev/null || true)"
     owner_pid="${owner%%|*}"
     rest="${owner#*|}"; owner_start="${rest%|*}"; owner_label="${owner##*|}"
 
-    if [[ -n "$owner" ]] \
-       && { [[ ! "$owner_pid" =~ ^[0-9]+$ ]] || [[ "$(_proc_started "$owner_pid")" != "$owner_start" ]]; }; then
+    if [[ -n "$owner" ]] && ! _owner_alive "$owner_pid" "$owner_start"; then
       # The owner is gone, or its PID now belongs to something else.
+      #
+      # Deleting the link and racing for it again would let a second contender
+      # delete the lock the first one had just won — both would then be inside
+      # the critical section. Instead publish our own token *over* the stale one
+      # and read it back: rename is atomic and last-writer-wins, so exactly one
+      # contender's token survives and everybody else goes back to waiting.
       warn "Clearing a stale lock left by ${owner_label:-a previous run}"
-      rm -f "$LOCK_LINK"
+      if ln -s "$token" "$LOCK_LINK.steal.$$" 2>/dev/null \
+         && mv -f "$LOCK_LINK.steal.$$" "$LOCK_LINK" 2>/dev/null \
+         && [[ "$(readlink "$LOCK_LINK" 2>/dev/null || true)" == "$token" ]]; then
+        break                                  # we are the one holding it now
+      fi
+      rm -f "$LOCK_LINK.steal.$$"
     elif [[ -n "$owner" ]]; then
       [[ $waited -eq 0 ]] && info "Waiting for '${owner_label}' (PID $owner_pid) to finish..."
       [[ $waited -ge $LOCK_WAIT ]] && die "'${owner_label}' (PID $owner_pid) has held the lock for ${LOCK_WAIT}s.
