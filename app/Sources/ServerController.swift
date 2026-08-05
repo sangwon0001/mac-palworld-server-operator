@@ -432,10 +432,17 @@ final class ServerController: ObservableObject {
         var onLine: (@Sendable (String) -> Void)?
         if !capture {
             onLine = { [weak self] line in
+                // Bound to a local before the nested closures. Swift 5.10 — the
+                // toolchain on macOS 14, and what CI builds with — rejects a weak
+                // capture referenced from inside concurrently-executing code, so
+                // reading it here and capturing the result keeps the app building
+                // on Xcode 15 as well as 16. (@MainActor makes the class Sendable,
+                // so passing it across is fine.)
+                let controller = self
                 // Called from a background queue; hop to main to touch @Published.
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
-                        self?.append(line)
+                        controller?.append(line)
                     }
                 }
             }

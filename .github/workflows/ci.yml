@@ -11,7 +11,7 @@ jobs:
     name: Shell scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
@@ -24,7 +24,7 @@ jobs:
     name: macOS build
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # cron on macOS runs /bin/bash, which is still 3.2. Parsing the scripts with
       # that exact binary is the only way to catch bash 4+ syntax that would work
