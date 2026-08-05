@@ -9,6 +9,9 @@ struct ContentView: View {
     @State private var kickTarget: RconClient.Player?
     @State private var banTarget: RconClient.Player?
     @State private var showUpdateConfirm = false
+    @State private var backupName = ""
+    @State private var renameTarget: BackupEntry?
+    @State private var renameText = ""
 
     enum Tab: String, CaseIterable {
         case dashboard = "대시보드"
@@ -53,6 +56,40 @@ struct ContentView: View {
         }
         .frame(minWidth: 720, minHeight: 680)
         .sheet(isPresented: $showSettings) { settingsSheet }
+        .sheet(item: $renameTarget) { target in
+            VStack(alignment: .leading, spacing: 14) {
+                Text("백업 이름 바꾸기").font(.title3.bold())
+                Text(target.filename)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+
+                TextField("이름 (비우면 이름 없음)", text: $renameText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        controller.renameBackup(target, to: renameText)
+                        renameTarget = nil
+                    }
+
+                Text("이름을 붙이면 보관 기간이 지나도 자동으로 삭제되지 않습니다. "
+                     + "비우면 다시 자동 정리 대상이 됩니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button("취소") { renameTarget = nil }
+                    Button("변경") {
+                        controller.renameBackup(target, to: renameText)
+                        renameTarget = nil
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(20)
+            .frame(width: 460, height: 230)
+        }
         .confirmationDialog(
             "이 백업으로 복원할까요?",
             isPresented: Binding(get: { restoreTarget != nil }, set: { if !$0 { restoreTarget = nil } }),
@@ -253,7 +290,8 @@ struct ContentView: View {
                 .disabled(!controller.status.running)
 
                 Button {
-                    controller.backup()
+                    controller.backup(named: backupName)
+                    backupName = ""
                 } label: {
                     Label("지금 백업", systemImage: "archivebox").frame(maxWidth: .infinity)
                 }
@@ -462,6 +500,20 @@ struct ContentView: View {
                 .font(.caption)
             }
 
+            // 이름을 붙이면 자동 정리에서 제외되므로, 중요한 시점을 남길 때 씁니다.
+            HStack(spacing: 8) {
+                TextField("백업 이름 (선택) — 예: 보스전 직전", text: $backupName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        controller.backup(named: backupName)
+                        backupName = ""
+                    }
+                if !backupName.isEmpty {
+                    Text("자동 삭제 안 됨")
+                        .font(.caption2).foregroundStyle(.green)
+                }
+            }
+
             if controller.backups.isEmpty {
                 Text("백업이 없습니다. '지금 백업'을 눌러 첫 백업을 만드세요.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -470,11 +522,28 @@ struct ContentView: View {
                     ForEach(controller.backups.prefix(6)) { b in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(b.date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.callout)
-                                Text(b.size).font(.caption2).foregroundStyle(.secondary)
+                                HStack(spacing: 6) {
+                                    Text(b.date.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.callout)
+                                    if b.isKept {
+                                        Text(b.label)
+                                            .font(.caption2.weight(.medium))
+                                            .padding(.horizontal, 6).padding(.vertical, 2)
+                                            .background(.green.opacity(0.18), in: Capsule())
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+                                Text(b.isKept ? "\(b.size) · 자동 삭제 안 됨" : b.size)
+                                    .font(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
+                            Button("이름") {
+                                renameTarget = b
+                                renameText = b.label
+                            }
+                            .buttonStyle(.bordered).controlSize(.small)
+                            .disabled(controller.isBusy)
+
                             Button("복원") { restoreTarget = b }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)

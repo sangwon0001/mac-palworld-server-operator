@@ -252,7 +252,8 @@ final class ServerController: ObservableObject {
                 return BackupEntry(
                     filename: name,
                     size: ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file),
-                    date: date
+                    date: date,
+                    label: BackupEntry.parseLabel(from: name)
                 )
             }
             .sorted { $0.date > $1.date }
@@ -262,7 +263,20 @@ final class ServerController: ObservableObject {
 
     func start()   { perform("서버 기동 중…",   script: "start_server.sh") }
     func stop()    { perform("안전 종료 중…",   script: "stop_server.sh") }
-    func backup()  { perform("백업 생성 중…",   script: "backup_save.sh") }
+    /// 이름을 주면 `palworld_backup_<시각>_<이름>.tar.gz` 로 만들어지고,
+    /// 이름이 붙은 백업은 자동 정리에서 제외됩니다.
+    func backup(named label: String = "") {
+        let trimmed = label.trimmingCharacters(in: .whitespaces)
+        let args = trimmed.isEmpty ? [] : ["--name", trimmed]
+        perform("백업 생성 중…", script: "backup_save.sh", args: args)
+    }
+
+    /// 백업 이름 바꾸기. 빈 문자열을 주면 이름을 지웁니다.
+    func renameBackup(_ entry: BackupEntry, to newLabel: String) {
+        perform("이름 변경 중…", script: "backup_save.sh",
+                args: ["--rename", entry.filename,
+                       newLabel.trimmingCharacters(in: .whitespaces)])
+    }
     func restart() { perform("재시작 중…",      script: "auto_restart.sh") }
     func update()  { perform("서버 업데이트 중…", script: "install_update.sh") }
 

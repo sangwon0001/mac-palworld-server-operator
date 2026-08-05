@@ -57,14 +57,33 @@ struct BackupEntry: Identifiable, Hashable {
     let filename: String
     let size: String
     let date: Date
+    /// 사용자가 붙인 이름. 비어 있으면 이름 없는 자동 백업입니다.
+    let label: String
 
-    /// `palworld_backup_YYYYMMDD_HHMMSS.tar.gz` 에서 시각을 복원합니다.
+    /// 이름이 있으면 자동 정리에서 제외됩니다 (backup_save.sh 와 같은 규칙).
+    var isKept: Bool { !label.isEmpty }
+
+    private static let prefix = "palworld_backup_"
+
+    /// `palworld_backup_YYYYMMDD_HHMMSS[_이름].tar.gz` 에서 시각을 복원합니다.
     static func parseDate(from filename: String) -> Date? {
         guard let r = filename.range(of: #"\d{8}_\d{6}"#, options: .regularExpression) else { return nil }
         let f = DateFormatter()
         f.dateFormat = "yyyyMMdd_HHmmss"
         f.locale = Locale(identifier: "en_US_POSIX")
         return f.date(from: String(filename[r]))
+    }
+
+    /// 타임스탬프는 고정폭 15자(YYYYMMDD_HHMMSS)이므로 그 뒤가 이름입니다.
+    /// 이름 안에 밑줄이 있어도 정확히 분리됩니다.
+    static func parseLabel(from filename: String) -> String {
+        var s = filename
+        guard s.hasPrefix(prefix) else { return "" }
+        s.removeFirst(prefix.count)
+        if s.hasSuffix(".tar.gz") { s.removeLast(".tar.gz".count) }
+        guard s.count > 15 else { return "" }
+        let rest = String(s.dropFirst(15))
+        return rest.hasPrefix("_") ? String(rest.dropFirst()) : rest
     }
 }
 
