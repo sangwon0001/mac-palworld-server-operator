@@ -157,7 +157,7 @@ release_lock() {
 
 # Usage: acquire_lock "backup"   (dies if another operation holds it too long)
 acquire_lock() {
-  local label="${1:-operation}" waited=0 token owner rest owner_pid owner_start owner_label
+  local label="${1:-operation}" waited=0 spins=0 token owner rest owner_pid owner_start owner_label
   [[ -n "${PAL_LOCK_HELD:-}" ]] && return 0     # inherited from the parent script
 
   mkdir -p "$RUN_DIR"
@@ -177,12 +177,13 @@ acquire_lock() {
       [[ $waited -eq 0 ]] && info "Waiting for '${owner_label}' (PID $owner_pid) to finish..."
       [[ $waited -ge $LOCK_WAIT ]] && die "'${owner_label}' (PID $owner_pid) has held the lock for ${LOCK_WAIT}s.
     Wait for it, or remove the lock by hand: rm -f '$LOCK_LINK'"
-      sleep 2
+      sleep 2; waited=$((waited + 2))     # counts real seconds, so the message above is true
     fi
-    # An empty read means the lock was released between ln and readlink: retry
-    # immediately. The budget still advances so this cannot spin forever.
-    waited=$((waited + 2))
-    [[ $waited -ge $((LOCK_WAIT * 2)) ]] && die "Could not take the lock after ${waited}s of contention."
+    # Falling through without sleeping is the fast path: either the lock was
+    # released between ln and readlink, or a stale one was just cleared. Both
+    # should retry at once — but a retry that never settles must still end.
+    spins=$((spins + 1))
+    [[ $spins -gt 1000 ]] && die "Gave up taking the lock after $spins attempts."
   done
 
   export PAL_LOCK_HELD="$$"

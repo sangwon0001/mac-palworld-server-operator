@@ -93,9 +93,11 @@ case "$MODE" in
     fg_pid=$!
     printf '%s' "$fg_pid" > "$PID_FILE"
     release_lock
-    wait "$fg_pid"
+    # Foreground mode exists for debugging, so the server's own exit status is
+    # the useful answer — don't swallow it.
+    fg_rc=0; wait "$fg_pid" || fg_rc=$?
     rm -f "$PID_FILE"
-    exit 0
+    exit "$fg_rc"
     ;;
 
   tmux)
