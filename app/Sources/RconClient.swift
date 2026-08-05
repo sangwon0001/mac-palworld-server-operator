@@ -30,10 +30,10 @@ actor RconClient {
 
         var errorDescription: String? {
             switch self {
-            case .notConfigured:            return "RCON 비밀번호가 설정되지 않았습니다."
-            case .connectionFailed(let m):  return "RCON 연결 실패: \(m)"
-            case .authFailed:               return "RCON 인증 실패 — AdminPassword 를 확인하세요."
-            case .protocolError(let m):     return "RCON 프로토콜 오류: \(m)"
+            case .notConfigured:            return t("RCON 비밀번호가 설정되지 않았습니다.")
+            case .connectionFailed(let m):  return t("RCON 연결 실패: %@", m)
+            case .authFailed:               return t("RCON 인증 실패 — AdminPassword 를 확인하세요.")
+            case .protocolError(let m):     return t("RCON 프로토콜 오류: %@", m)
             }
         }
     }
@@ -70,7 +70,7 @@ actor RconClient {
                                  credentials c: Credentials,
                                  timeout: TimeInterval) throws -> String {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { throw RconError.connectionFailed("소켓 생성 실패") }
+        guard fd >= 0 else { throw RconError.connectionFailed(t("소켓 생성 실패")) }
         defer { close(fd) }
 
         // 서버가 응답하지 않을 때 영원히 매달리지 않도록 송수신 타임아웃을 겁니다.
@@ -82,7 +82,7 @@ actor RconClient {
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = c.port.bigEndian
         guard inet_pton(AF_INET, c.host, &addr.sin_addr) == 1 else {
-            throw RconError.connectionFailed("주소 변환 실패: \(c.host)")
+            throw RconError.connectionFailed(t("주소 변환 실패: %@", c.host))
         }
 
         let connected = withUnsafePointer(to: &addr) {
@@ -91,7 +91,7 @@ actor RconClient {
             }
         }
         guard connected == 0 else {
-            throw RconError.connectionFailed("서버가 응답하지 않습니다 (포트 \(c.port))")
+            throw RconError.connectionFailed(t("서버가 응답하지 않습니다 (포트 %@)", "\(c.port)"))
         }
 
         // 1) 인증 — 실패 시 서버는 요청 ID 를 -1 로 돌려줍니다.
@@ -122,7 +122,7 @@ actor RconClient {
             var sent = 0
             while sent < buf.count {
                 let n = Darwin.send(fd, buf.baseAddress!.advanced(by: sent), buf.count - sent, 0)
-                guard n > 0 else { throw RconError.connectionFailed("전송 중단") }
+                guard n > 0 else { throw RconError.connectionFailed(t("전송 중단")) }
                 sent += n
             }
         }
@@ -135,7 +135,7 @@ actor RconClient {
             let n = buf.withUnsafeMutableBytes {
                 recv(fd, $0.baseAddress!.advanced(by: got), count - got, 0)
             }
-            guard n > 0 else { throw RconError.protocolError("응답이 끊겼습니다") }
+            guard n > 0 else { throw RconError.protocolError(t("응답이 끊겼습니다")) }
             got += n
         }
         return Data(buf)
@@ -189,12 +189,12 @@ actor RconClient {
         let sizeData = try readExact(fd, 4)
         let size = sizeData.withUnsafeBytes { $0.loadUnaligned(as: Int32.self).littleEndian }
         guard size >= 10, size < 8 * 1024 * 1024 else {
-            throw RconError.protocolError("패킷 길이가 비정상입니다 (\(size))")
+            throw RconError.protocolError(t("패킷 길이가 비정상입니다 (%@)", "\(size)"))
         }
 
         let payload = readUpTo(fd, Int(size), settle: settle)
         guard payload.count >= 8 else {
-            throw RconError.protocolError("응답이 너무 짧습니다 (\(payload.count)바이트)")
+            throw RconError.protocolError(t("응답이 너무 짧습니다 (%@바이트)", "\(payload.count)"))
         }
 
         let id = payload.withUnsafeBytes { $0.loadUnaligned(as: Int32.self).littleEndian }

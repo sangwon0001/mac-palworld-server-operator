@@ -27,28 +27,21 @@ struct GameSettingsView: View {
         }
         .frame(minWidth: 700, minHeight: 560)
         .task { await controller.loadSettings() }
-        .confirmationDialog("변경 내용을 적용할까요?",
+        .confirmationDialog(t("변경 내용을 적용할까요?"),
                             isPresented: $showApplyConfirm, titleVisibility: .visible) {
-            Button("적용") { controller.applySettings() }
-            Button("취소", role: .cancel) { }
+            Button(t("적용")) { controller.applySettings() }
+            Button(t("취소"), role: .cancel) { }
         } message: {
             Text(applySummary)
         }
-        .confirmationDialog("운영 항목까지 전부 기본값으로 되돌릴까요?",
+        .confirmationDialog(t("운영 항목까지 전부 기본값으로 되돌릴까요?"),
                             isPresented: $showResetAllConfirm, titleVisibility: .visible) {
-            Button("전부 되돌리기", role: .destructive) {
+            Button(t("전부 되돌리기"), role: .destructive) {
                 controller.resetAllToDefaults(includeOperational: true)
             }
-            Button("취소", role: .cancel) { }
+            Button(t("취소"), role: .cancel) { }
         } message: {
-            Text("""
-            관리자 비밀번호가 지워지고 RCON 이 꺼집니다. 그러면 안전 종료가 \
-            시그널 방식으로 바뀌어 세이브가 유실될 위험이 생기고, 서버 이름과 \
-            포트 설정도 초기화됩니다.
-
-            변경분은 [적용] 을 누르기 전까지 파일에 쓰이지 않으므로 \
-            [되돌리기] 로 취소할 수 있습니다.
-            """)
+            Text(t("관리자 비밀번호가 지워지고 RCON 이 꺼집니다. 그러면 안전 종료가 시그널 방식으로 바뀌어 세이브가 유실될 위험이 생기고, 서버 이름과 포트 설정도 초기화됩니다.\n\n변경분은 [적용] 을 누르기 전까지 파일에 쓰이지 않으므로 [되돌리기] 로 취소할 수 있습니다."))
         }
     }
 
@@ -60,7 +53,7 @@ struct GameSettingsView: View {
                 let n = count(in: c)
                 Label {
                     HStack {
-                        Text(c.rawValue)
+                        Text(t(c.rawValue))
                         Spacer()
                         if n > 0 {
                             Text("\(n)").font(.caption).foregroundStyle(.secondary)
@@ -88,9 +81,9 @@ struct GameSettingsView: View {
 
             if controller.settings.isEmpty {
                 ContentUnavailableView(
-                    "설정을 불러올 수 없습니다",
+                    t("설정을 불러올 수 없습니다"),
                     systemImage: "doc.questionmark",
-                    description: Text("서버를 한 번 설치·기동해야 PalWorldSettings.ini 가 생성됩니다.")
+                    description: Text(t("서버를 한 번 설치·기동해야 PalWorldSettings.ini 가 생성됩니다."))
                 )
             } else {
                 ScrollView {
@@ -120,7 +113,7 @@ struct GameSettingsView: View {
     private var toolbar: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("설정 검색 (한글 이름 또는 키)", text: $search)
+            TextField(t("설정 검색 (한글 이름 또는 키)"), text: $search)
                 .textFieldStyle(.plain)
             if !search.isEmpty {
                 Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
@@ -129,22 +122,22 @@ struct GameSettingsView: View {
             Divider().frame(height: 16)
 
             Menu {
-                Button("게임플레이 값만 기본값으로 (\(controller.modifiedGameplayCount)개)") {
+                Button(t("게임플레이 값만 기본값으로 (%@개)", "\(controller.modifiedGameplayCount)")) {
                     controller.resetAllToDefaults()
                 }
                 .disabled(controller.modifiedGameplayCount == 0)
 
                 Divider()
 
-                Button("운영 항목까지 전부 기본값으로…", role: .destructive) {
+                Button(t("운영 항목까지 전부 기본값으로…"), role: .destructive) {
                     showResetAllConfirm = true
                 }
             } label: {
-                Label("기본값 복구", systemImage: "arrow.uturn.backward")
+                Label(t("기본값 복구"), systemImage: "arrow.uturn.backward")
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("기본값과 다른 항목을 되돌립니다 (적용 전까지 취소 가능)")
+            .help(t("기본값과 다른 항목을 되돌립니다 (적용 전까지 취소 가능)"))
 
             Button {
                 Task { await controller.loadSettings() }
@@ -152,7 +145,7 @@ struct GameSettingsView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
-            .help("파일에서 다시 읽기 (변경분 버림)")
+            .help(t("파일에서 다시 읽기 (변경분 버림)"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -165,6 +158,7 @@ struct GameSettingsView: View {
             return controller.settings.filter {
                 $0.key.lowercased().contains(q)
                 || SettingsCatalog.meta(for: $0.key).label.lowercased().contains(q)
+                || t(SettingsCatalog.meta(for: $0.key).label).lowercased().contains(q)
             }
         }
         return controller.settings.filter {
@@ -175,7 +169,7 @@ struct GameSettingsView: View {
     private var applySummary: String {
         controller.pendingSettings
             .sorted { $0.key < $1.key }
-            .map { "\(SettingsCatalog.meta(for: $0.key).label): \($0.value)" }
+            .map { "\(t(SettingsCatalog.meta(for: $0.key).label)): \($0.value)" }
             .joined(separator: "\n")
     }
 
@@ -183,19 +177,19 @@ struct GameSettingsView: View {
         VStack(spacing: 0) {
             Divider()
             HStack {
-                Text("\(controller.pendingSettings.count)개 변경됨")
+                Text(t("%@개 변경됨", "\(controller.pendingSettings.count)"))
                     .font(.callout.weight(.medium))
 
                 if controller.status.running {
-                    Label("적용하려면 서버 재시작이 필요합니다",
+                    Label(t("적용하려면 서버 재시작이 필요합니다"),
                           systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.orange)
                 }
 
                 Spacer()
 
-                Button("되돌리기") { controller.discardPendingSettings() }
-                Button("적용") { showApplyConfirm = true }
+                Button(t("되돌리기")) { controller.discardPendingSettings() }
+                Button(t("적용")) { showApplyConfirm = true }
                     .buttonStyle(.borderedProminent)
                     .disabled(controller.isBusy)
             }
@@ -228,18 +222,18 @@ private struct SettingRow: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(meta.label).font(.callout)
+                    Text(t(meta.label)).font(.callout)
                     if isDirty {
                         Circle().fill(.orange).frame(width: 6, height: 6)
                     }
                 }
-                if meta.label != item.key {
+                if t(meta.label) != item.key {
                     Text(item.key)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }
                 if let help = meta.help {
-                    Text(help).font(.caption2).foregroundStyle(.secondary)
+                    Text(t(help)).font(.caption2).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -248,7 +242,7 @@ private struct SettingRow: View {
                     Button {
                         onReset()
                     } label: {
-                        Label("기본값 \(def.isEmpty ? "(빈값)" : def) 으로",
+                        Label(t("기본값 %@ 으로", def.isEmpty ? t("(빈값)") : def),
                               systemImage: "arrow.uturn.backward")
                             .font(.caption2)
                     }

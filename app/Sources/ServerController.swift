@@ -119,7 +119,7 @@ final class ServerController: ObservableObject {
                !ip.isEmpty {
                 publicIP = ip
             } else {
-                append("‼️ 공인 IP 조회 실패 — 네트워크를 확인하세요.")
+                append(t("‼️ 공인 IP 조회 실패 — 네트워크를 확인하세요."))
             }
         }
     }
@@ -189,7 +189,7 @@ final class ServerController: ObservableObject {
 
     /// 백업 → 안전 종료 → 업데이트 → 재기동.
     func updateServer() {
-        let task = perform("서버 업데이트 중…", script: "auto_restart.sh", args: ["--update"])
+        let task = perform(t("서버 업데이트 중…"), script: "auto_restart.sh", args: ["--update"])
         Task {
             await task.value
             await checkUpdate(force: true)
@@ -200,20 +200,20 @@ final class ServerController: ObservableObject {
     func broadcast(_ message: String) {
         let text = message.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
-        rconCommand("공지 전송", { try await self.rcon.broadcast(text) })
+        rconCommand(t("공지 전송"), { try await self.rcon.broadcast(text) })
     }
 
     func kick(_ player: RconClient.Player) {
-        rconCommand("\(player.name) 강퇴", { try await self.rcon.kick(player.uid) })
+        rconCommand(t("%@ 강퇴", player.name), { try await self.rcon.kick(player.uid) })
     }
 
     func ban(_ player: RconClient.Player) {
-        rconCommand("\(player.name) 밴", { try await self.rcon.ban(player.uid) })
+        rconCommand(t("%@ 밴", player.name), { try await self.rcon.ban(player.uid) })
     }
 
     /// 세이브만 즉시 플러시합니다 (서버는 계속 실행).
     func saveWorld() {
-        rconCommand("월드 저장", { try await self.rcon.save() })
+        rconCommand(t("월드 저장"), { try await self.rcon.save() })
     }
 
     /// RCON 명령은 수십 ms 면 끝나므로 busyMessage 로 UI 를 잠그지 않고,
@@ -222,7 +222,7 @@ final class ServerController: ObservableObject {
         Task {
             await prepareRcon()
             guard rconReady else {
-                append("‼️ \(label) 실패: RCON 비밀번호가 설정되지 않았습니다.")
+                append(t("‼️ %@ 실패: RCON 비밀번호가 설정되지 않았습니다.", label))
                 return
             }
             do {
@@ -231,7 +231,7 @@ final class ServerController: ObservableObject {
                 append("✔︎ \(label): \(trimmed.isEmpty ? "완료" : trimmed)")
                 await refreshPlayers()
             } catch {
-                append("‼️ \(label) 실패: \(error.localizedDescription)")
+                append(t("‼️ %@ 실패: %@", label, error.localizedDescription))
             }
         }
     }
@@ -261,28 +261,28 @@ final class ServerController: ObservableObject {
 
     // MARK: - 동작
 
-    func start()   { perform("서버 기동 중…",   script: "start_server.sh") }
-    func stop()    { perform("안전 종료 중…",   script: "stop_server.sh") }
+    func start()   { perform(t("서버 기동 중…"),   script: "start_server.sh") }
+    func stop()    { perform(t("안전 종료 중…"),   script: "stop_server.sh") }
     /// 이름을 주면 `palworld_backup_<시각>_<이름>.tar.gz` 로 만들어지고,
     /// 이름이 붙은 백업은 자동 정리에서 제외됩니다.
     func backup(named label: String = "") {
         let trimmed = label.trimmingCharacters(in: .whitespaces)
         let args = trimmed.isEmpty ? [] : ["--name", trimmed]
-        perform("백업 생성 중…", script: "backup_save.sh", args: args)
+        perform(t("백업 생성 중…"), script: "backup_save.sh", args: args)
     }
 
     /// 백업 이름 바꾸기. 빈 문자열을 주면 이름을 지웁니다.
     func renameBackup(_ entry: BackupEntry, to newLabel: String) {
-        perform("이름 변경 중…", script: "backup_save.sh",
+        perform(t("이름 변경 중…"), script: "backup_save.sh",
                 args: ["--rename", entry.filename,
                        newLabel.trimmingCharacters(in: .whitespaces)])
     }
-    func restart() { perform("재시작 중…",      script: "auto_restart.sh") }
-    func update()  { perform("서버 업데이트 중…", script: "install_update.sh") }
+    func restart() { perform(t("재시작 중…"),      script: "auto_restart.sh") }
+    func update()  { perform(t("서버 업데이트 중…"), script: "install_update.sh") }
 
     /// 복원은 되돌리기 어려우므로 호출부(UI)에서 반드시 확인을 받은 뒤 부릅니다.
     func restore(_ filename: String) {
-        perform("복원 중…", script: "restore_save.sh", args: [filename], stdin: "y\n")
+        perform(t("복원 중…"), script: "restore_save.sh", args: [filename], stdin: "y\n")
     }
 
     // MARK: - 게임 설정
@@ -359,7 +359,7 @@ final class ServerController: ObservableObject {
         guard !pendingSettings.isEmpty else { return }
         // settings.sh 가 Key=Value 인자를 받아 '요청한 키만' 정밀 치환합니다.
         let args = pendingSettings.map { "\($0.key)=\($0.value)" }.sorted()
-        let task = perform("설정 저장 중…", script: "settings.sh", args: ["--set"] + args)
+        let task = perform(t("설정 저장 중…"), script: "settings.sh", args: ["--set"] + args)
         Task {
             // 저장이 끝난 뒤 파일에서 다시 읽어 실제 반영 결과를 보여 줍니다.
             await task.value
@@ -379,7 +379,7 @@ final class ServerController: ObservableObject {
             do {
                 _ = try await run(script: script, args: args, capture: false, stdin: stdin)
             } catch {
-                append("‼️ 실행 실패: \(error.localizedDescription)")
+                append(t("‼️ 실행 실패: %@", error.localizedDescription))
             }
             busyMessage = nil
             await refresh()
@@ -410,7 +410,7 @@ final class ServerController: ObservableObject {
         let path = (dir as NSString).appendingPathComponent(script)
         guard FileManager.default.fileExists(atPath: path) else {
             throw NSError(domain: "Palworld", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "스크립트를 찾을 수 없습니다: \(path)\n설정에서 스크립트 폴더를 지정하세요."
+                NSLocalizedDescriptionKey: t("스크립트를 찾을 수 없습니다: %@\n설정에서 스크립트 폴더를 지정하세요.", path)
             ])
         }
 
@@ -501,7 +501,7 @@ final class ServerController: ObservableObject {
                 process.waitUntilExit()
 
                 if process.terminationStatus != 0 {
-                    onLine("종료 코드: \(process.terminationStatus)")
+                    onLine(t("종료 코드: %@", "\(process.terminationStatus)"))
                 }
                 continuation.resume(returning: "")
             }

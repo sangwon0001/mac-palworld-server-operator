@@ -18,7 +18,7 @@ struct PalworldServerApp: App {
     // @StateObject 의 autoclosure 에 생성을 맡깁니다. autoclosure 는 SwiftUI 가
     // 실제로 필요할 때 단 한 번만 평가하므로 인스턴스가 하나로 보장됩니다.
     var body: some Scene {
-        Window("Palworld 서버", id: "main") {
+        Window(t("Palworld 서버"), id: "main") {
             ContentView()
                 .environmentObject(controller)
         }
@@ -46,35 +46,36 @@ struct MenuBarContent: View {
     var body: some View {
         Text(headline)
         if controller.status.running {
-            Text("CPU \(String(format: "%.1f", controller.status.cpuPercent))% · "
-                 + "RAM \(memoryText) · 접속자 \(controller.players.count)명")
+            Text(t("CPU %@%% · RAM %@ · 접속자 %@명",
+                   String(format: "%.1f", controller.status.cpuPercent),
+                   memoryText, "\(controller.players.count)"))
         }
 
         Divider()
 
         if controller.status.running {
-            Button("안전 종료") { controller.stop() }
-            Button("재시작") { controller.restart() }
+            Button(t("안전 종료")) { controller.stop() }
+            Button(t("재시작")) { controller.restart() }
         } else {
-            Button("서버 시작") { controller.start() }
+            Button(t("서버 시작")) { controller.start() }
         }
-        Button("지금 백업") { controller.backup() }
+        Button(t("지금 백업")) { controller.backup() }
 
         Divider()
 
-        Button("창 열기") {
+        Button(t("창 열기")) {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
-        Button("종료") { NSApplication.shared.terminate(nil) }
+        Button(t("종료")) { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
     }
 
     private var headline: String {
-        guard controller.status.running else { return "● 정지됨" }
+        guard controller.status.running else { return t("● 정지됨") }
         return controller.status.portBound
-            ? "● 실행 중 (가동 \(controller.status.uptime))"
-            : "● 기동 중…"
+            ? t("● 실행 중 (가동 %@)", controller.status.uptime)
+            : t("● 기동 중…")
     }
 
     private var memoryText: String {

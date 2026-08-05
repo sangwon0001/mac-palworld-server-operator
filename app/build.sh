@@ -62,6 +62,13 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <key>CFBundleVersion</key>             <string>1</string>
     <key>LSMinimumSystemVersion</key>      <string>${MIN_MACOS}</string>
     <key>NSHighResolutionCapable</key>     <true/>
+    <key>CFBundleDevelopmentRegion</key>   <string>ko</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>ko</string>
+        <string>en</string>
+        <string>ja</string>
+    </array>
     <!-- 앱이 실행할 셸 스크립트들의 위치. 앱 설정에서 변경할 수 있습니다. -->
     <key>PWScriptsDirectory</key>          <string>${SCRIPTS_DIR}</string>
 </dict>
@@ -69,6 +76,19 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 EOF
 
 printf 'APPL????' > "$APP_BUNDLE/Contents/PkgInfo"
+
+# ------------------------------------------------------------------ 지역화
+# Xcode 없이 빌드하므로 String Catalog(.xcstrings)는 쓸 수 없습니다.
+# 고전적인 .lproj/Localizable.strings 를 번들 Resources 에 그대로 복사합니다.
+if [[ -d Resources ]]; then
+  copied=0
+  for d in Resources/*.lproj; do
+    [[ -d "$d" ]] || continue
+    cp -R "$d" "$APP_BUNDLE/Contents/Resources/"
+    copied=$((copied + 1))
+  done
+  ok "지역화 리소스 ${copied}개 언어 포함"
+fi
 
 # ------------------------------------------------------------------ 코드서명
 # 배포용 인증서가 없으므로 ad-hoc 서명합니다. 로컬 빌드라 quarantine 이
