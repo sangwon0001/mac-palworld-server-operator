@@ -93,9 +93,21 @@ if [[ $DO_SERVER -eq 1 && $FINAL_BACKUP -eq 1 && -d "$SAVEGAMES_DIR" ]]; then
   printf '\n  A final backup is taken first (skip it with --no-final-backup).\n'
 fi
 
+# BACKUP_DIR defaults outside PAL_ROOT, but nothing stops config.local.sh putting
+# it inside — and then removing the server folder would take every backup with
+# it, without --backups ever being mentioned.
+if [[ $DO_SERVER -eq 1 && $DO_BACKUPS -eq 0 && "$BACKUP_DIR/" == "$PAL_ROOT/"* ]]; then
+  die "Your backups live inside the server folder, so removing it would delete them too:
+    backups: $BACKUP_DIR
+    server:  $PAL_ROOT
+    Move the backups elsewhere first, or say --backups if you mean to lose them."
+fi
+
 if [[ $ASSUME_YES -eq 0 ]]; then
   printf '\nContinue? [y/N] '
-  read -r answer
+  # An empty read (EOF, no terminal) must cancel, not abort part-way through
+  # under `set -e`, which would skip the "Cancelled" message entirely.
+  read -r answer || answer=""
   [[ "$answer" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 0; }
 fi
 
@@ -143,9 +155,15 @@ if [[ $DO_SERVER -eq 1 ]]; then
   # in BACKUP_DIR, which --backups deletes afterwards if you asked for that too.
   if [[ $FINAL_BACKUP -eq 1 && -d "$SAVEGAMES_DIR" && $DO_BACKUPS -eq 0 ]]; then
     info "Taking a final backup..."
-    ./backup_save.sh --name "before uninstall" --no-prune >/dev/null \
-      && ok "Final backup saved in $BACKUP_DIR" \
-      || warn "The final backup failed — continuing, since you asked to remove the server."
+    if ./backup_save.sh --name "before uninstall" --no-prune >/dev/null; then
+      ok "Final backup saved in $BACKUP_DIR"
+    else
+      # Deleting the save anyway would be the one unrecoverable outcome here, and
+      # a final backup is what was asked for. Make it a decision, not a warning.
+      die "The final backup failed, so the save has NOT been deleted.
+    Fix the cause (disk space? permissions?) and try again,
+    or pass --no-final-backup if you genuinely do not want the save kept."
+    fi
   fi
 
   [[ -d "$PAL_ROOT"   ]] && { safe_rm "$PAL_ROOT";   ok "Removed $PAL_ROOT"; }
@@ -165,7 +183,7 @@ if [[ $DO_BACKUPS -eq 1 ]]; then
   printf '\n%sThis deletes %s archives in %s and cannot be undone.%s\n' \
          "$_c_red" "${count:-0}" "$BACKUP_DIR" "$_c_reset"
   printf 'Type DELETE to confirm: '
-  read -r confirm
+  read -r confirm || confirm=""
   if [[ "$confirm" == "DELETE" ]]; then
     safe_rm "$BACKUP_DIR"; ok "Removed $BACKUP_DIR"
   else

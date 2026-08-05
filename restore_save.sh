@@ -137,7 +137,9 @@ case "$1" in
 
     if [[ $ASSUME_YES -eq 0 ]]; then
       printf '\nThis overwrites the current save. Continue? [y/N] '
-      read -r answer
+      # Reading nothing (EOF, no terminal) means cancel. Without the fallback,
+      # `set -e` would abort here and never print why.
+      read -r answer || answer=""
       [[ "$answer" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 0; }
     fi
 
