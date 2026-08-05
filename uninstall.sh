@@ -14,7 +14,10 @@
 #     ./uninstall.sh --server       # server files and the Wine prefix
 #     ./uninstall.sh --steamcmd     # SteamCMD (you may use it for other games)
 #     ./uninstall.sh --all          # scheduling + app + server + Wine prefix
-#     ./uninstall.sh --backups      # the backups too — asks you to type DELETE
+#     ./uninstall.sh --backups      # the backup archives too — asks for DELETE
+#                                   #   (typed at the terminal, before anything
+#                                   #    is removed; only this toolkit's own
+#                                   #    archives are deleted, not the folder)
 #     ./uninstall.sh --all --yes    # skip the confirmation (never for backups)
 #
 #   --server takes a final backup first, unless you pass --no-final-backup.
@@ -53,6 +56,34 @@ safe_rm() {
   rm -rf "$target"
 }
 
+# Physical path, with symlinks and .. resolved. The overlap checks below compare
+# strings, and "$HOME/backups" vs "$HOME/server/../backups" are the same folder
+# written two ways — a lexical comparison would call them unrelated and delete
+# one while claiming to spare it.
+canonical() {
+  local p="$1"
+  if [[ -d "$p" ]]; then (cd -P "$p" 2>/dev/null && pwd -P) || printf '%s' "$p"
+  else printf '%s' "$p"; fi
+}
+
+# Does the server folder actually hold a server? A PAL_ROOT left pointing at the
+# wrong place (a typo in config.local.sh, an old export still in the shell) turns
+# --server into "delete that folder", whatever it happens to be.
+looks_like_server_dir() {
+  local d="$1" entry
+  [[ -d "$d" ]] || return 1
+  [[ -d "$d/Pal" || -d "$d/steamapps" || -f "$d/PalServer.exe" ]] && return 0
+  # A server that was never installed leaves only what this toolkit created.
+  for entry in "$d"/* "$d"/.*; do
+    entry="${entry##*/}"
+    case "$entry" in
+      '*'|'.*'|.|..|logs|run) continue ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
 size_of() { [[ -e "$1" ]] && du -sh "$1" 2>/dev/null | cut -f1 || printf '-'; }
 
 cron_installed()    { crontab -l 2>/dev/null | grep -qF "palworld-server cron"; }
@@ -87,28 +118,25 @@ printf '\n%sAbout to delete%s\n' "$_c_ylw" "$_c_reset"
 [[ $DO_SERVER   -eq 1 ]] && printf '  · %s  %s(includes the save games)%s\n' "$PAL_ROOT" "$_c_red" "$_c_reset"
 [[ $DO_SERVER   -eq 1 ]] && printf '  · %s\n' "$WINEPREFIX"
 [[ $DO_STEAMCMD -eq 1 ]] && printf '  · %s\n' "$STEAMCMD_DIR"
-[[ $DO_BACKUPS  -eq 1 ]] && printf '  · %s  %severy backup you have%s\n' "$BACKUP_DIR" "$_c_red" "$_c_reset"
+[[ $DO_BACKUPS  -eq 1 ]] && printf '  · backup archives in %s  %severy backup you have%s\n' "$BACKUP_DIR" "$_c_red" "$_c_reset"
 
 if [[ $DO_SERVER -eq 1 && $FINAL_BACKUP -eq 1 && -d "$SAVEGAMES_DIR" ]]; then
   printf '\n  A final backup is taken first (skip it with --no-final-backup).\n'
 fi
 
 # BACKUP_DIR defaults outside PAL_ROOT, but nothing stops config.local.sh putting
-# it inside — and then removing the server folder would take every backup with
-# it, without --backups ever being mentioned.
-if [[ $DO_SERVER -eq 1 && $DO_BACKUPS -eq 0 && "$BACKUP_DIR/" == "$PAL_ROOT/"* ]]; then
-  die "Your backups live inside the server folder, so removing it would delete them too:
-    backups: $BACKUP_DIR
-    server:  $PAL_ROOT
-    Move the backups elsewhere first, or say --backups if you mean to lose them."
-fi
-# And the other way round, for the same reason.
-if [[ $DO_BACKUPS -eq 1 && $DO_SERVER -eq 0 && "$PAL_ROOT/" == "$BACKUP_DIR/"* ]]; then
-  die "The server folder sits inside the backup folder, so clearing the backups
-    would take the server and its save with it:
-    backups: $BACKUP_DIR
-    server:  $PAL_ROOT
-    Move one of them, or say --server as well if you mean to remove both."
+# one inside the other — and then removing one would silently take the other with
+# it. Compared on physical paths, and in both directions, since either nesting is
+# equally easy to configure and equally destructive.
+pal_c="$(canonical "$PAL_ROOT")"
+bak_c="$(canonical "$BACKUP_DIR")"
+if [[ $((DO_SERVER + DO_BACKUPS)) -eq 1 ]] \
+   && { [[ "$bak_c/" == "$pal_c/"* ]] || [[ "$pal_c/" == "$bak_c/"* ]]; }; then
+  die "The server folder and the backup folder overlap, so removing one would
+    delete the other:
+    server:  $pal_c
+    backups: $bak_c
+    Move one of them, or pass both --server and --backups if you mean to lose both."
 fi
 
 if [[ $ASSUME_YES -eq 0 ]]; then
@@ -119,15 +147,37 @@ if [[ $ASSUME_YES -eq 0 ]]; then
   [[ "$answer" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 0; }
 fi
 
-# A running server holds the files being deleted, and killing it this way is how
-# a save gets damaged.
-if [[ $DO_SERVER -eq 1 ]] && is_running; then
-  die "The server is running. Stop it first: ./stop_server.sh"
+# The backups question is settled here, before anything is deleted. Asking after
+# the server folder was already gone meant a "no" left you with neither the
+# server nor the final backup that was skipped on account of this flag.
+BACKUPS_CONFIRMED=0
+if [[ $DO_BACKUPS -eq 1 ]]; then
+  count="$(find "$BACKUP_DIR" \( -name 'palworld_backup_*.tar.gz' -o -name 'prerestore_*.tar.gz' \) 2>/dev/null | grep -c . || true)"
+  printf '\n%sThis deletes %s archives in %s and cannot be undone.%s\n' \
+         "$_c_red" "${count:-0}" "$BACKUP_DIR" "$_c_reset"
+  # Read from the terminal, not stdin. --yes deliberately does not cover this,
+  # and neither should a pipe that happens to contain the word.
+  if [[ -r /dev/tty ]]; then
+    printf 'Type DELETE to confirm: '
+    read -r confirm </dev/tty || confirm=""
+  else
+    confirm=""
+    warn "No terminal to confirm on — backups will be kept."
+  fi
+  [[ "$confirm" == "DELETE" ]] && BACKUPS_CONFIRMED=1 || info "Backups will be kept."
 fi
 
 # Held for the whole removal, so a scheduled backup cannot start reading files
-# midway through deleting them.
+# midway through deleting them. Taken *before* the running-server check: the
+# other way round left a gap in which start_server.sh could take the lock and
+# bring a server up against files about to be deleted.
 acquire_lock "uninstall"
+
+# A running server holds the files being deleted, and killing it this way is how
+# a save gets damaged. Checked under the lock, so nothing can start after it.
+if [[ $DO_SERVER -eq 1 ]] && is_running; then
+  die "The server is running. Stop it first: ./stop_server.sh"
+fi
 
 # Recorded before anything is deleted, not after: the operations log lives inside
 # PAL_ROOT, so writing to it afterwards would recreate the very directory this
@@ -161,7 +211,9 @@ fi
 if [[ $DO_SERVER -eq 1 ]]; then
   # One last copy of the save before the folder holding it disappears. It lands
   # in BACKUP_DIR, which --backups deletes afterwards if you asked for that too.
-  if [[ $FINAL_BACKUP -eq 1 && -d "$SAVEGAMES_DIR" && $DO_BACKUPS -eq 0 ]]; then
+  # Keyed on the answer actually given, not on the flag: --backups where DELETE
+  # was declined means the backups are staying, so the final one is worth taking.
+  if [[ $FINAL_BACKUP -eq 1 && -d "$SAVEGAMES_DIR" && $BACKUPS_CONFIRMED -eq 0 ]]; then
     info "Taking a final backup..."
     if ./backup_save.sh --name "before uninstall" --no-prune >/dev/null; then
       ok "Final backup saved in $BACKUP_DIR"
@@ -174,8 +226,26 @@ if [[ $DO_SERVER -eq 1 ]]; then
     fi
   fi
 
-  [[ -d "$PAL_ROOT"   ]] && { safe_rm "$PAL_ROOT";   ok "Removed $PAL_ROOT"; }
-  [[ -d "$WINEPREFIX" ]] && { safe_rm "$WINEPREFIX"; ok "Removed $WINEPREFIX"; }
+  if [[ -d "$PAL_ROOT" ]]; then
+    looks_like_server_dir "$PAL_ROOT" \
+      || die "This does not look like a Palworld server folder, so it was left alone:
+    $PAL_ROOT
+    Expected Pal/, steamapps/ or PalServer.exe inside it. Check PAL_ROOT in
+    config.local.sh — deleting the wrong folder is not something to guess at."
+    safe_rm "$PAL_ROOT"; ok "Removed $PAL_ROOT"
+  fi
+
+  # Only the prefix this toolkit creates. A custom WINEPREFIX may well be shared
+  # with other Wine applications, and --server does not read as "remove those".
+  if [[ -d "$WINEPREFIX" ]]; then
+    if [[ "$(canonical "$WINEPREFIX")" == "$(canonical "$HOME/.palworld_wine")" ]]; then
+      safe_rm "$WINEPREFIX"; ok "Removed $WINEPREFIX"
+    else
+      info "Left the custom Wine prefix alone: $WINEPREFIX"
+      printf '    %sIt may be shared with other apps. Remove it yourself if not.%s\n' \
+             "$_c_dim" "$_c_reset"
+    fi
+  fi
 fi
 
 # ------------------------------------------------------------------ SteamCMD
@@ -184,19 +254,21 @@ if [[ $DO_STEAMCMD -eq 1 ]]; then
 fi
 
 # ------------------------------------------------------------------ Backups
-if [[ $DO_BACKUPS -eq 1 ]]; then
-  # Deliberately not covered by --yes. Backups are the one thing here that cannot
-  # be reinstalled, so this always asks, and asks for a word rather than a key.
-  count="$(find "$BACKUP_DIR" -name '*.tar.gz' 2>/dev/null | grep -c . || true)"
-  printf '\n%sThis deletes %s archives in %s and cannot be undone.%s\n' \
-         "$_c_red" "${count:-0}" "$BACKUP_DIR" "$_c_reset"
-  printf 'Type DELETE to confirm: '
-  read -r confirm || confirm=""
-  if [[ "$confirm" == "DELETE" ]]; then
-    safe_rm "$BACKUP_DIR"; ok "Removed $BACKUP_DIR"
-  else
-    info "Backups kept."
-  fi
+if [[ $BACKUPS_CONFIRMED -eq 1 ]]; then
+  # Only the archives this toolkit writes, never the folder wholesale. BACKUP_DIR
+  # is a user setting, and pointing it at somewhere that already holds other
+  # files — ~/Documents, say — should cost you your backups, not everything else
+  # in there.
+  deleted=0
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    rm -f "$f" && deleted=$((deleted + 1))
+  done < <(find "$BACKUP_DIR" -maxdepth 1 \
+             \( -name 'palworld_backup_*.tar.gz' -o -name 'prerestore_*.tar.gz' \) 2>/dev/null)
+  ok "Deleted ${deleted} backup archives from $BACKUP_DIR"
+  # Take the folder as well only if this emptied it.
+  rmdir "$BACKUP_DIR" 2>/dev/null && ok "Removed the (now empty) $BACKUP_DIR" \
+    || info "Kept $BACKUP_DIR — other files are still in it"
 fi
 
 printf '\n'

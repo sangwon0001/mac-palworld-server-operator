@@ -167,7 +167,12 @@ require_free_mb() {
 # Re-entrant across scripts: auto_restart.sh calls backup/stop/start, and each
 # would otherwise deadlock on the lock its own parent holds. The holder exports
 # PAL_LOCK_HELD, so child scripts see it and skip straight through.
-LOCK_LINK="${LOCK_LINK:-$RUN_DIR/ops.lock}"
+# Deliberately outside PAL_ROOT: uninstall.sh deletes that folder, and a lock
+# stored inside it would vanish mid-run, letting a scheduled job start work on a
+# half-removed install. It also has to be one fixed path for everyone — the app,
+# cron, launchd and a terminal all get different TMPDIRs, and a per-session lock
+# path would mean no mutual exclusion at all.
+LOCK_LINK="${LOCK_LINK:-$HOME/.palworld_server_ops.lock}"
 LOCK_WAIT="${LOCK_WAIT:-300}"          # seconds to wait for a busy lock
 
 # Process start time, as ps reports it. Empty for a PID that no longer exists.
