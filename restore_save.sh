@@ -35,6 +35,11 @@ set -- "${ARGS[@]+"${ARGS[@]}"}"
 [[ $# -ge 1 ]] || usage 1
 
 # Restores require a stopped server; writing underneath a running one is pointless.
+#
+# Checked twice on purpose: once early for immediate feedback, and again after the
+# lock is held. Between the first check and the extraction there is a prompt to
+# answer, and someone could start the server in that gap — the second check
+# happens under the lock, where no start can slip in behind it.
 require_stopped() {
   if is_running; then
     die "The server is running. Stop it first with ./stop_server.sh"
@@ -85,6 +90,7 @@ case "$1" in
     ls -1 "$SRC_SAVES" | while read -r w; do printf '    World ID: %s\n' "$w"; done
 
     acquire_lock "import"
+    require_stopped          # re-check: nothing can start while the lock is held
     snapshot_current
     mkdir -p "$SAVEGAMES_DIR" "$CONFIG_DIR"
 
@@ -131,6 +137,7 @@ case "$1" in
     fi
 
     acquire_lock "restore"
+    require_stopped          # re-check: nothing can start while the lock is held
     snapshot_current
     mkdir -p "$PAL_ROOT"
     tar -xzf "$ARCHIVE" -C "$PAL_ROOT" || die "Extraction failed"

@@ -28,6 +28,19 @@ json_str() {
   s="${s//$'\t'/\\t}"
   s="${s//$'\r'/\\r}"
   s="${s//$'\n'/\\n}"
+
+  # JSON forbids every character below U+0020, not just the three with short
+  # escapes — one form feed in a path or a nickname is enough to make the whole
+  # document undecodable. The common case has none, so check once and skip.
+  if [[ "$s" == *[$'\001'-$'\037']* ]]; then
+    local code c
+    for code in 1 2 3 4 5 6 7 8 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31; do
+      # Replacing whole characters rather than walking the string keeps multi-byte
+      # text (Korean or Japanese names) intact regardless of bash's locale support.
+      c="$(printf "\\$(printf '%03o' "$code")")"
+      s="${s//$c/$(printf '\\u%04x' "$code")}"
+    done
+  fi
   printf '"%s"' "$s"
 }
 
@@ -36,16 +49,26 @@ json_str() {
 # that changes at autosave speed. Cache it briefly.
 SAVE_SIZE_TTL="${SAVE_SIZE_TTL:-30}"
 cached_save_bytes() {
-  local cache="$RUN_DIR/savesize.cache" age kb bytes
+  local cache="$RUN_DIR/savesize.cache" age kb bytes cached
   [[ -d "$SAVEGAMES_DIR" ]] || { printf '0'; return 0; }
   if [[ -f "$cache" ]]; then
     age=$(( $(date +%s) - $(stat -f %m "$cache" 2>/dev/null || echo 0) ))
-    if [[ $age -ge 0 && $age -lt $SAVE_SIZE_TTL ]]; then cat "$cache"; return 0; fi
+    cached="$(cat "$cache" 2>/dev/null)"
+    # Anything but digits goes back to du. The value lands unquoted in the JSON,
+    # so a truncated or garbled cache would produce output the app cannot decode.
+    if [[ $age -ge 0 && $age -lt $SAVE_SIZE_TTL && "$cached" =~ ^[0-9]+$ ]]; then
+      printf '%s' "$cached"; return 0
+    fi
   fi
   kb="$(du -sk "$SAVEGAMES_DIR" 2>/dev/null | cut -f1)"
   [[ "$kb" =~ ^[0-9]+$ ]] || kb=0
   bytes=$(( kb * 1024 ))
-  mkdir -p "$RUN_DIR" && printf '%s' "$bytes" > "$cache" 2>/dev/null
+  # Write via a per-process temp file and rename: the app and a terminal can run
+  # status.sh at the same moment, and a half-written cache must never be visible.
+  mkdir -p "$RUN_DIR" 2>/dev/null
+  if printf '%s' "$bytes" > "$cache.$$" 2>/dev/null; then
+    mv -f "$cache.$$" "$cache" 2>/dev/null || rm -f "$cache.$$"
+  fi
   printf '%s' "$bytes"
 }
 
@@ -122,7 +145,12 @@ emit_json() {
   # Where the backups actually live. BACKUP_DIR is overridable in
   # config.local.sh, and without this the app had no way to know — it guessed
   # ~/palworld_backups and showed an empty list next to a non-zero count.
-  printf '"backupDir":%s,'    "$(json_str "$BACKUP_DIR")"
+  # Reported as an absolute path: every script cd's to its own directory first, so
+  # a relative BACKUP_DIR means "next to the scripts", which is not what the GUI
+  # process's working directory would resolve it to.
+  local backup_dir_abs="$BACKUP_DIR"
+  [[ "$backup_dir_abs" == /* ]] || backup_dir_abs="$PWD/$backup_dir_abs"
+  printf '"backupDir":%s,'    "$(json_str "$backup_dir_abs")"
   printf '"gamePort":%s,'     "$GAME_PORT"
   printf '"rconPort":%s,'     "$RCON_PORT"
   # Connection addresses. The public IP is left out because it requires an

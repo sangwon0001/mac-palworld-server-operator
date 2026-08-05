@@ -125,56 +125,72 @@ trim_log() {
 # --- Single-writer lock ------------------------------------------------------
 # Start, stop, backup, restore and update all move the same save files around,
 # and there are three ways to trigger them at once (the app, cron and a
-# terminal). macOS ships no flock(1), so the lock is a directory: mkdir is
-# atomic, and the owning PID inside it lets a stale lock be recognised.
+# terminal). macOS ships no flock(1), so the lock is a symlink.
+#
+# Why a symlink and not a lock directory: `ln -s` is atomic *and* publishes its
+# payload in the same step. A directory would have to be created first and
+# stamped with its owner second, leaving a window where the lock exists with no
+# owner — and a second process arriving in that window cannot tell "just taken"
+# from "left behind by a crash". The link's target text carries the owner from
+# the instant it exists. (The target names no real file; it is pure payload.)
+#
+# The owner token is "PID|process-start-time|label". The start time is what makes
+# stale detection trustworthy: a bare `kill -0` on a recycled PID reports a lock
+# as live forever, which would block every backup until an unrelated process
+# happened to exit.
 #
 # Re-entrant across scripts: auto_restart.sh calls backup/stop/start, and each
 # would otherwise deadlock on the lock its own parent holds. The holder exports
 # PAL_LOCK_HELD, so child scripts see it and skip straight through.
-LOCK_DIR="${LOCK_DIR:-$RUN_DIR/ops.lock}"
+LOCK_LINK="${LOCK_LINK:-$RUN_DIR/ops.lock}"
 LOCK_WAIT="${LOCK_WAIT:-300}"          # seconds to wait for a busy lock
+
+# Process start time, as ps reports it. Empty for a PID that no longer exists.
+_proc_started() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' '; }
 
 release_lock() {
   # Only the process that took the lock may drop it.
   [[ "${PAL_LOCK_HELD:-}" == "$$" ]] || return 0
-  rm -rf "$LOCK_DIR"
+  rm -f "$LOCK_LINK"
   unset PAL_LOCK_HELD
 }
 
 # Usage: acquire_lock "backup"   (dies if another operation holds it too long)
 acquire_lock() {
-  local label="${1:-operation}" waited=0 owner owner_pid owner_label
+  local label="${1:-operation}" waited=0 token owner rest owner_pid owner_start owner_label
   [[ -n "${PAL_LOCK_HELD:-}" ]] && return 0     # inherited from the parent script
 
   mkdir -p "$RUN_DIR"
-  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-    owner="$(cat "$LOCK_DIR/owner" 2>/dev/null || true)"
-    # mkdir and writing owner are two steps: an empty file may simply mean the
-    # winner has not written it yet. Give it a moment before calling it stale,
-    # or two simultaneous starts would delete each other's lock.
-    if [[ -z "$owner" ]]; then
-      sleep 1
-      owner="$(cat "$LOCK_DIR/owner" 2>/dev/null || true)"
-    fi
-    owner_pid="${owner%% *}"; owner_label="${owner#* }"
+  token="$$|$(_proc_started $$)|$label"
 
-    # A lock whose owner is gone (crash, SIGKILL) would block everything forever.
-    if [[ ! "$owner_pid" =~ ^[0-9]+$ ]] || ! kill -0 "$owner_pid" 2>/dev/null; then
+  while ! ln -s "$token" "$LOCK_LINK" 2>/dev/null; do
+    owner="$(readlink "$LOCK_LINK" 2>/dev/null || true)"
+    owner_pid="${owner%%|*}"
+    rest="${owner#*|}"; owner_start="${rest%|*}"; owner_label="${owner##*|}"
+
+    if [[ -n "$owner" ]] \
+       && { [[ ! "$owner_pid" =~ ^[0-9]+$ ]] || [[ "$(_proc_started "$owner_pid")" != "$owner_start" ]]; }; then
+      # The owner is gone, or its PID now belongs to something else.
       warn "Clearing a stale lock left by ${owner_label:-a previous run}"
-      rm -rf "$LOCK_DIR"
-      continue
+      rm -f "$LOCK_LINK"
+    elif [[ -n "$owner" ]]; then
+      [[ $waited -eq 0 ]] && info "Waiting for '${owner_label}' (PID $owner_pid) to finish..."
+      [[ $waited -ge $LOCK_WAIT ]] && die "'${owner_label}' (PID $owner_pid) has held the lock for ${LOCK_WAIT}s.
+    Wait for it, or remove the lock by hand: rm -f '$LOCK_LINK'"
+      sleep 2
     fi
-
-    [[ $waited -eq 0 ]] && info "Waiting for '${owner_label}' (PID $owner_pid) to finish..."
-    [[ $waited -ge $LOCK_WAIT ]] && die "'${owner_label}' (PID $owner_pid) has held the lock for ${LOCK_WAIT}s.
-    Wait for it, or remove the lock by hand: rm -rf '$LOCK_DIR'"
-    sleep 2; waited=$((waited + 2))
+    # An empty read means the lock was released between ln and readlink: retry
+    # immediately. The budget still advances so this cannot spin forever.
+    waited=$((waited + 2))
+    [[ $waited -ge $((LOCK_WAIT * 2)) ]] && die "Could not take the lock after ${waited}s of contention."
   done
 
-  printf '%s %s\n' "$$" "$label" > "$LOCK_DIR/owner"
   export PAL_LOCK_HELD="$$"
-  # EXIT alone misses Ctrl-C in some bash builds, so name the signals too.
-  trap release_lock EXIT INT TERM
+  # A bare `trap release_lock INT` would drop the lock and then carry on running
+  # unlocked, so the signal traps exit as well.
+  trap release_lock EXIT
+  trap 'release_lock; exit 130' INT
+  trap 'release_lock; exit 143' TERM
 }
 
 # --- Connection addresses ----------------------------------------------------

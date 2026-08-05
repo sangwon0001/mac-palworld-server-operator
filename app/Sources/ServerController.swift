@@ -94,11 +94,17 @@ final class ServerController: ObservableObject {
 
         // --no-rcon: players are fetched natively below, so skip the shell's RCON
         // call. (0.39s → 0.14s)
-        if let json = try? await run(script: "status.sh", args: ["--json", "--no-rcon"], capture: true),
-           let data = json.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode(ServerStatus.self, from: data) {
-            status = decoded
+        guard let json = try? await run(script: "status.sh", args: ["--json", "--no-rcon"], capture: true),
+              let data = json.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(ServerStatus.self, from: data)
+        else {
+            // Keep the last known values rather than acting on a status we could
+            // not read. Carrying on would list backups from the default folder
+            // while BACKUP_DIR points somewhere else, and report zero players
+            // because the running/rconListening flags are still false.
+            return
         }
+        status = decoded
 
         await refreshPlayers()
         await loadBackups()

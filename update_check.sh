@@ -74,7 +74,11 @@ if [[ $CACHED_ONLY -eq 0 ]] && { [[ $FORCE -eq 1 ]] || [[ $fresh -eq 0 ]]; }; th
       | awk '/"branches"/{b=1} b&&/"public"/{p=1} p&&/"buildid"/{gsub(/"/,"",$2); print $2; exit}')"
     if [[ "$fetched" =~ ^[0-9]+$ ]]; then
       latest="$fetched"; checked_at="$now"; age=0; fresh=1
-      printf '%s %s\n' "$latest" "$checked_at" > "$CACHE_FILE"
+      # Same reasoning as the save-size cache: write elsewhere, then rename, so a
+      # concurrent reader never sees a partial line.
+      if printf '%s %s\n' "$latest" "$checked_at" > "$CACHE_FILE.$$" 2>/dev/null; then
+        mv -f "$CACHE_FILE.$$" "$CACHE_FILE" 2>/dev/null || rm -f "$CACHE_FILE.$$"
+      fi
     fi
   fi
 fi

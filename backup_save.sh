@@ -226,11 +226,15 @@ if [[ $PRUNE -eq 1 ]]; then
   # settings.sh copies the ini aside on every single write, so editing settings a
   # few dozen times leaves a few dozen files next to the live config. They are
   # small, so cap the count rather than the age.
+  # Ordered by the timestamp in the name, not by mtime: settings.sh copies with
+  # shutil.copy2, which preserves the *source* file's mtime, so a backup made
+  # today can carry a date from whenever the ini was last written. The names sort
+  # chronologically on their own (bak_YYYYMMDD_HHMMSS).
   ini_deleted=0
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
     rm -f "$f" && ini_deleted=$((ini_deleted + 1))
-  done < <(ls -1t "$SETTINGS_INI".bak_* 2>/dev/null | tail -n +$((INI_BACKUP_KEEP + 1)))
+  done < <(ls -1 "$SETTINGS_INI".bak_* 2>/dev/null | sort -r | tail -n +$((INI_BACKUP_KEEP + 1)))
   [[ $ini_deleted -gt 0 ]] && ok "Deleted ${ini_deleted} old settings backups (newest ${INI_BACKUP_KEEP} kept)"
 
   # cron writes here with >> and nothing rotates it.

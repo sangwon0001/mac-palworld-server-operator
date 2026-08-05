@@ -80,11 +80,22 @@ case "$MODE" in
   fg)
     cd "$WORKDIR"
     audit "start (foreground)"
-    # exec replaces this shell, so the EXIT trap never fires — the lock has to go
-    # now. Otherwise a foreground server would hold it for its whole lifetime and
-    # block every backup.
+    # The server itself is not an "operation", so the lock must not be held for
+    # the hours it runs — that would block every scheduled backup. But it cannot
+    # be dropped before the server exists either: another start arriving in that
+    # window would find nothing running and launch a second one.
+    #
+    # So launch, record the PID (which is what the double-start guard reads), and
+    # only then release. Backgrounding rather than exec'ing is deliberate: in
+    # `exec cmd | tee` the exec applies to the pipeline's subshell, not to this
+    # shell, so it never had the meaning the old code assumed.
+    "${launch_cmd[@]}" > >(tee "$SERVER_LOG") 2>&1 &
+    fg_pid=$!
+    printf '%s' "$fg_pid" > "$PID_FILE"
     release_lock
-    exec "${launch_cmd[@]}" 2>&1 | tee "$SERVER_LOG"
+    wait "$fg_pid"
+    rm -f "$PID_FILE"
+    exit 0
     ;;
 
   tmux)
