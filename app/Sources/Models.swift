@@ -21,6 +21,7 @@ struct ServerStatus: Codable, Equatable {
     var rconPort: Int
     var lanIP: String
     var localHostname: String
+    var installedBuild: String
     var rconConfigured: Bool
 
     /// 같은 공유기 안에서 쓰는 접속 주소.
@@ -33,7 +34,7 @@ struct ServerStatus: Codable, Equatable {
         portBound: false, rconListening: false, playerCount: 0, players: [],
         saveBytes: 0, worlds: [], latestBackup: "", backupCount: 0,
         gamePort: 8211, rconPort: 25575, lanIP: "", localHostname: "",
-        rconConfigured: false
+        installedBuild: "", rconConfigured: false
     )
 
     /// 팰월드 서버는 장시간 가동 시 RSS 가 계속 증가합니다.
@@ -64,5 +65,26 @@ struct BackupEntry: Identifiable, Hashable {
         f.dateFormat = "yyyyMMdd_HHmmss"
         f.locale = Locale(identifier: "en_US_POSIX")
         return f.date(from: String(filename[r]))
+    }
+}
+
+
+/// `update_check.sh --json` 의 출력.
+struct UpdateStatus: Codable, Equatable {
+    var installedBuild: String
+    var latestBuild: String
+    /// "up-to-date" | "update-available" | "unknown"
+    var state: String
+    var checkedAt: Int
+    var cacheAgeSeconds: Int
+    var installedAt: Int
+
+    var updateAvailable: Bool { state == "update-available" }
+    var isKnown: Bool { state != "unknown" }
+
+    var checkedAtText: String? {
+        guard checkedAt > 0 else { return nil }
+        let d = Date(timeIntervalSince1970: TimeInterval(checkedAt))
+        return d.formatted(date: .abbreviated, time: .shortened)
     }
 }

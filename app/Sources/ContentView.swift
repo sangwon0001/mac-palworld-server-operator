@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var broadcastText = ""
     @State private var kickTarget: RconClient.Player?
     @State private var banTarget: RconClient.Player?
+    @State private var showUpdateConfirm = false
 
     enum Tab: String, CaseIterable {
         case dashboard = "대시보드"
@@ -37,6 +38,7 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         metrics
+                        versionSection
                         addressSection
                         actions
                         playersSection
@@ -265,6 +267,88 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+        }
+    }
+
+    // MARK: - 버전 · 업데이트
+
+    private var versionSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle("버전")
+
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(controller.gameVersion.map { "v\($0)" } ?? "버전 미확인")
+                            .font(.callout.weight(.medium))
+                        if let u = controller.updateStatus, u.updateAvailable {
+                            Text("업데이트 있음")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(.orange.opacity(0.2), in: Capsule())
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    if controller.gameVersion == nil {
+                        Text("서버가 실행 중일 때 RCON 으로 읽어 옵니다")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+
+                    if !controller.status.installedBuild.isEmpty {
+                        Text("설치 빌드 \(controller.status.installedBuild)"
+                             + (controller.updateStatus.map { u in
+                                 u.updateAvailable ? " → 최신 \(u.latestBuild)" : ""
+                               } ?? ""))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    if let checked = controller.updateStatus?.checkedAtText {
+                        Text("마지막 확인 \(checked)")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    Button {
+                        Task { await controller.checkUpdate(force: true) }
+                    } label: {
+                        if controller.isCheckingUpdate {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("확인 중…")
+                            }
+                        } else {
+                            Text("업데이트 확인")
+                        }
+                    }
+                    .disabled(controller.isCheckingUpdate || controller.isBusy)
+
+                    if let u = controller.updateStatus, u.updateAvailable {
+                        Button("지금 업데이트") { showUpdateConfirm = true }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                            .disabled(controller.isBusy)
+                    }
+                }
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .confirmationDialog("지금 업데이트할까요?",
+                            isPresented: $showUpdateConfirm, titleVisibility: .visible) {
+            Button("업데이트") { controller.updateServer() }
+            Button("취소", role: .cancel) { }
+        } message: {
+            Text("""
+            세이브를 백업하고 서버를 안전하게 종료한 뒤, 최신 버전을 내려받아 \
+            다시 기동합니다. 접속자가 있으면 종료 예고 후 끊깁니다.
+
+            백업이 실패하면 업데이트를 진행하지 않고 중단합니다.
+            """)
         }
     }
 

@@ -31,6 +31,13 @@ final class ServerController: ObservableObject {
 
     private let rcon = RconClient()
     private var rconReady = false
+
+    /// RCON `Info` 에서 뽑은 게임 버전 (예: "1.0.2.101103").
+    /// 서버가 실행 중일 때만 알 수 있습니다.
+    @Published private(set) var gameVersion: String?
+    /// 설치 빌드와 Steam 최신 빌드 비교 결과.
+    @Published private(set) var updateStatus: UpdateStatus?
+    @Published private(set) var isCheckingUpdate = false
     @Published var scriptsDirectory: String {
         didSet { UserDefaults.standard.set(scriptsDirectory, forKey: "scriptsDirectory") }
     }
@@ -57,6 +64,11 @@ final class ServerController: ObservableObject {
         guard pollTask == nil else { return }
 
         pollTask = Task { [weak self] in
+            // 시작할 때 캐시된 업데이트 상태만 한 번 읽습니다 (네트워크 없음).
+            // Steam 조회는 6초가 걸려 3초 폴링에 섞을 수 없으므로,
+            // 실제 조회는 사용자가 [확인] 을 누를 때만 합니다.
+            await self?.checkUpdate(cachedOnly: true)
+
             while !Task.isCancelled {
                 // 컨트롤러가 사라졌으면 루프도 끝냅니다.
                 // (self? 로 두면 인스턴스가 없어져도 루프가 계속 돌며 CPU 를 먹습니다)
@@ -129,6 +141,9 @@ final class ServerController: ObservableObject {
     private func refreshPlayers() async {
         guard status.running, status.rconListening else {
             players = []
+            // 서버가 내려가면 버전도 잊습니다. 다음 기동 때 다시 읽어야
+            // 업데이트 후 바뀐 버전이 반영됩니다.
+            gameVersion = nil
             return
         }
         await prepareRcon()
@@ -140,6 +155,44 @@ final class ServerController: ObservableObject {
         } catch {
             players = []
             rconError = error.localizedDescription
+        }
+
+        // 게임 버전은 한 번만 알아내면 됩니다 (재기동 전까지 바뀌지 않음).
+        if gameVersion == nil, let v = try? await rcon.info() {
+            // "Welcome to Pal Server[v1.0.2.101103] 서버이름" 에서 버전만.
+            // 서버가 한글 이름을 잘라 보내는 버그가 있지만 버전은 앞쪽이라 안전합니다.
+            if let r = v.range(of: #"\[v[0-9.]+\]"#, options: .regularExpression) {
+                gameVersion = String(v[r]).trimmingCharacters(in: CharacterSet(charactersIn: "[v]"))
+            }
+        }
+    }
+
+    // MARK: - 업데이트 확인
+
+    /// 설치 빌드와 Steam 최신 빌드를 비교합니다.
+    /// - Parameter cachedOnly: true 면 네트워크를 타지 않고 캐시만 읽습니다(즉시).
+    ///   상시 폴링에서 6초짜리 Steam 조회가 반복되지 않도록 하기 위함입니다.
+    func checkUpdate(cachedOnly: Bool = false, force: Bool = false) async {
+        if !cachedOnly { isCheckingUpdate = true }
+        defer { isCheckingUpdate = false }
+
+        var args = ["--json"]
+        if cachedOnly { args.append("--cached") }
+        if force { args.append("--force") }
+
+        guard let json = try? await run(script: "update_check.sh", args: args, capture: true),
+              let data = json.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(UpdateStatus.self, from: data)
+        else { return }
+        updateStatus = decoded
+    }
+
+    /// 백업 → 안전 종료 → 업데이트 → 재기동.
+    func updateServer() {
+        let task = perform("서버 업데이트 중…", script: "auto_restart.sh", args: ["--update"])
+        Task {
+            await task.value
+            await checkUpdate(force: true)
         }
     }
 

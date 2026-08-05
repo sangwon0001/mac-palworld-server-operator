@@ -57,6 +57,12 @@ emit_json() {
   latest_backup="$(ls -1t "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | head -n1 || true)"
   backup_count="$(ls -1 "$BACKUP_DIR"/palworld_backup_*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
 
+  # 설치된 빌드 번호. 매니페스트를 읽을 뿐이라 네트워크를 타지 않습니다.
+  # 최신 버전과의 비교는 비용이 커서 update_check.sh 가 따로 담당합니다.
+  local installed_build=""
+  local manifest="$PAL_ROOT/steamapps/appmanifest_${STEAM_APPID}.acf"
+  [[ -f "$manifest" ]] && installed_build="$(awk '/"buildid"/ {gsub(/"/,"",$2); print $2; exit}' "$manifest" 2>/dev/null)"
+
   printf '{'
   printf '"running":%s,'      "$([[ -n "$pid" ]] && echo true || echo false)"
   printf '"pid":%s,'          "${pid:-0}"
@@ -77,6 +83,7 @@ emit_json() {
   # (--public-ip 로 명시적으로 조회하세요).
   printf '"lanIP":"%s",'      "$(lan_ip || true)"
   printf '"localHostname":"%s",' "$(local_hostname || true)"
+  printf '"installedBuild":"%s",' "$installed_build"
   printf '"rconConfigured":%s' "$([[ -n "$RCON_PASSWORD" ]] && echo true || echo false)"
   printf '}\n'
 }
@@ -163,6 +170,12 @@ if [[ -n "$pid" ]]; then
 
   row "가동 시간"   "${p_etime:-?}"
   row "시작 시각"   "${p_start:-?}"
+
+  # 설치된 빌드 (최신 여부는 ./update_check.sh 가 판정)
+  _mf="$PAL_ROOT/steamapps/appmanifest_${STEAM_APPID}.acf"
+  if [[ -f "$_mf" ]]; then
+    row "설치 빌드" "$(awk '/"buildid"/ {gsub(/"/,"",$2); print $2; exit}' "$_mf")"
+  fi
 
   # Wine 은 자식 프로세스를 여럿 만듭니다. 전체 합계도 같이 봅니다.
   total_rss="$(ps -axo rss=,command= 2>/dev/null | grep -E 'PalServer|wineserver' | grep -v grep | awk '{s+=$1} END {print int(s/1024)}')"
