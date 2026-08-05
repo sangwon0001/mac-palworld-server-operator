@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# stop_server.sh - 서버 안전 종료 (세이브 유실 방지)
+# stop_server.sh - Shut the server down safely, without losing the save
 #
-#   종료 단계 (앞 단계가 성공하면 뒤는 실행하지 않음):
-#     1) RCON Save + Shutdown  ← 가장 안전. 게임이 직접 세이브를 플러시함
-#     2) SIGINT  (Ctrl-C 상당) ← Wine 이 Windows 콘솔 종료 이벤트로 변환
+#   Escalation (each stage only runs if the previous one failed):
+#     1) RCON Save + Shutdown  ← safest; the game flushes its own save
+#     2) SIGINT (like Ctrl-C)  ← Wine turns this into a Windows console close event
 #     3) SIGTERM
-#     4) SIGKILL + wineserver -k  ← 최후 수단. 세이브 손상 위험 있음
+#     4) SIGKILL + wineserver -k  ← last resort; risks a damaged save
 #
-#   사용법:
-#     ./stop_server.sh              # 안전 종료 (RCON 예고 후 종료)
-#     ./stop_server.sh --now        # 예고 없이 즉시 저장 후 종료
-#     ./stop_server.sh --force      # 유령 프로세스까지 강제 정리
+#   Usage:
+#     ./stop_server.sh              # safe shutdown (warn over RCON, then stop)
+#     ./stop_server.sh --now        # save and stop immediately, no warning
+#     ./stop_server.sh --force      # also clean up an unresponsive process
 # ==============================================================================
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -25,7 +25,7 @@ case "${1:-}" in
   *)       die "알 수 없는 옵션: $1 (--now | --force)" ;;
 esac
 
-# ------------------------------------------------------------ 대상 PID 확정
+# ------------------------------------------------------------ Resolve target PID
 pid="$(server_pid || true)"
 if [[ -z "$pid" ]]; then
   pid="$(server_pid_by_name || true)"
@@ -43,7 +43,7 @@ fi
 info "종료 대상 PID: $pid"
 audit "stop 시작 pid=$pid"
 
-# 프로세스가 사라질 때까지 최대 N초 대기
+# Wait up to N seconds for the process to disappear
 wait_gone() {
   local p="$1" limit="$2" i
   for ((i = 0; i < limit; i++)); do
@@ -53,12 +53,12 @@ wait_gone() {
   return 1
 }
 
-# ------------------------------------------------ 1단계: RCON 우아한 종료
+# ------------------------------------------------ Stage 1: graceful via RCON
 if [[ -n "$RCON_PASSWORD" ]]; then
   info "RCON 으로 세이브 후 종료를 시도합니다 (예고 ${DELAY}초)"
   if rcon_cmd "Save" >/dev/null 2>&1; then
     ok "월드 세이브 플러시 완료"
-    # Shutdown <초> <메시지> : 접속자에게 예고 후 정상 종료
+    # Shutdown <seconds> <message>: warn players, then stop cleanly
     rcon_cmd "Shutdown ${DELAY} Server_is_shutting_down" >/dev/null 2>&1 || true
     if wait_gone "$pid" $((DELAY + 45)); then
       rm -f "$PID_FILE"
@@ -75,7 +75,7 @@ else
   warn "가장 안전한 종료를 위해 config.local.sh 에 RCON_PASSWORD 를 설정하세요."
 fi
 
-# ---------------------------------------------------- 2단계: SIGINT (권장)
+# ---------------------------------------------------- Stage 2: SIGINT
 info "SIGINT 전송 (최대 60초 대기)"
 kill -INT "$pid" 2>/dev/null || true
 if wait_gone "$pid" 60; then
@@ -85,7 +85,7 @@ if wait_gone "$pid" 60; then
   exit 0
 fi
 
-# --------------------------------------------------------- 3단계: SIGTERM
+# --------------------------------------------------------- Stage 3: SIGTERM
 warn "SIGINT 무응답. SIGTERM 전송 (최대 45초 대기)"
 kill -TERM "$pid" 2>/dev/null || true
 if wait_gone "$pid" 45; then
@@ -95,7 +95,7 @@ if wait_gone "$pid" 45; then
   exit 0
 fi
 
-# ------------------------------------------- 4단계: SIGKILL (최후 수단)
+# ------------------------------------------- Stage 4: SIGKILL (last resort)
 if [[ $FORCE -eq 0 ]]; then
   audit "stop 교착 pid=$pid"
   die "프로세스가 응답하지 않습니다 (PID $pid).
@@ -106,7 +106,7 @@ warn "SIGKILL 강제 종료 — 최근 진행분이 유실될 수 있습니다."
 kill -KILL "$pid" 2>/dev/null || true
 sleep 2
 
-# Wine 잔여 프로세스 정리 (wineserver 가 남으면 다음 기동이 실패합니다)
+# Clean up leftover Wine processes; a stray wineserver breaks the next start
 if detect_wine; then
   "${WINE_BIN%/*}/wineserver" -k 2>/dev/null || true
 fi

@@ -1,11 +1,11 @@
 import Foundation
 import SwiftUI
 
-/// 셸 스크립트들을 실행하고 상태를 폴링하는 컨트롤러.
+/// Runs the shell scripts and polls server state.
 ///
-/// 설계 원칙: 서버 제어 로직은 전부 기존 .sh 스크립트에 있고, 이 클래스는
-/// 그것을 호출하기만 합니다. 덕분에 터미널/cron 경로와 앱이 완전히 같은
-/// 코드를 사용하며, 앱에서 한 동작이 CLI 에서도 동일하게 재현됩니다.
+/// Design rule: all server-control logic lives in the .sh scripts; this class only
+/// invokes them. The app, the terminal and cron therefore run exactly the same code,
+/// and anything done in the app is reproducible from the CLI.
 @MainActor
 final class ServerController: ObservableObject {
 
@@ -14,28 +14,28 @@ final class ServerController: ObservableObject {
     @Published private(set) var logLines: [String] = []
     @Published private(set) var busyMessage: String?
 
-    /// 파일에서 읽어 온 게임 설정 원본.
+    /// Game settings as read from the file.
     @Published private(set) var settings: [GameSetting] = []
-    /// 사용자가 편집했지만 아직 파일에 쓰지 않은 값. [적용] 시 한 번에 반영합니다.
+    /// Edited but not yet written to disk; applied in one batch on Apply.
     @Published private(set) var pendingSettings: [String: String] = [:]
 
-    /// 네이티브 RCON 으로 조회한 접속자. 셸 경유(260ms) 대신 직접 TCP(34ms).
+    /// Players fetched over native RCON — direct TCP (34ms) instead of the shell (260ms).
     @Published private(set) var players: [RconClient.Player] = []
-    /// 마지막 RCON 오류. 접속자 목록이 비는 이유를 UI 에서 알려 주기 위함입니다.
+    /// Last RCON error, so the UI can explain why the player list is empty.
     @Published private(set) var rconError: String?
 
-    /// 공인 IP. 외부 서비스에 요청이 나가므로 자동 조회하지 않고,
-    /// 사용자가 버튼을 눌렀을 때만 가져옵니다.
+    /// Public IP. Fetching it calls an external service, so it is only looked up
+    /// when the user explicitly asks.
     @Published private(set) var publicIP: String?
     @Published private(set) var isFetchingPublicIP = false
 
     private let rcon = RconClient()
     private var rconReady = false
 
-    /// RCON `Info` 에서 뽑은 게임 버전 (예: "1.0.2.101103").
-    /// 서버가 실행 중일 때만 알 수 있습니다.
+    /// Game version parsed from RCON `Info` (e.g. "1.0.2.101103").
+    /// Only knowable while the server is running.
     @Published private(set) var gameVersion: String?
-    /// 설치 빌드와 Steam 최신 빌드 비교 결과.
+    /// Result of comparing the installed build against Steam's latest.
     @Published private(set) var updateStatus: UpdateStatus?
     @Published private(set) var isCheckingUpdate = false
     @Published var scriptsDirectory: String {
@@ -47,31 +47,30 @@ final class ServerController: ObservableObject {
     private var pollTask: Task<Void, Never>?
 
     init() {
-        // 우선순위: 사용자가 앱에서 지정한 값 > 빌드 시 기록된 값 > 홈 기준 추정
+        // Precedence: user-chosen path > path baked in at build time > guess from $HOME
         let stored = UserDefaults.standard.string(forKey: "scriptsDirectory")
         let baked = Bundle.main.object(forInfoDictionaryKey: "PWScriptsDirectory") as? String
         scriptsDirectory = stored ?? baked ?? NSHomeDirectory() + "/palworld-server"
 
-        // 이 인스턴스의 수명과 폴링을 일치시킵니다. 자세한 이유는
-        // PalworldServerApp 의 주석 참고.
+        // Tie polling to this instance's lifetime; see the note in PalworldServerApp.
         startPolling()
     }
 
-    // MARK: - 폴링
+    // MARK: - Polling
 
     func startPolling() {
-        // 이미 돌고 있으면 새로 만들지 않습니다 (중복 폴링 방지).
+        // Don't start a second loop if one is already running.
         guard pollTask == nil else { return }
 
         pollTask = Task { [weak self] in
-            // 시작할 때 캐시된 업데이트 상태만 한 번 읽습니다 (네트워크 없음).
-            // Steam 조회는 6초가 걸려 3초 폴링에 섞을 수 없으므로,
-            // 실제 조회는 사용자가 [확인] 을 누를 때만 합니다.
+            // Read only the cached update state at startup (no network).
+            // A Steam lookup takes ~6s and cannot ride along with a 3s poll, so the
+            // real check happens only when the user presses Check for Updates.
             await self?.checkUpdate(cachedOnly: true)
 
             while !Task.isCancelled {
-                // 컨트롤러가 사라졌으면 루프도 끝냅니다.
-                // (self? 로 두면 인스턴스가 없어져도 루프가 계속 돌며 CPU 를 먹습니다)
+                // End the loop once the controller is gone. (With `self?` the loop
+                // would keep spinning and burning CPU after the instance disappears.)
                 guard let self else { return }
                 await self.refresh()
                 try? await Task.sleep(for: .seconds(3))
@@ -85,12 +84,12 @@ final class ServerController: ObservableObject {
     }
 
     func refresh() async {
-        // 장시간 작업(기동/종료/재시작) 중에는 상태 조회를 건너뜁니다.
-        // 폴링과 작업 출력이 뒤섞이는 것을 막고 불필요한 프로세스 생성도 줄입니다.
+        // Skip status polling during long operations (start/stop/restart): it keeps
+        // poll output from interleaving with task output and avoids extra processes.
         guard !isBusy else { return }
 
-        // --no-rcon: 접속자는 아래에서 네이티브로 조회하므로 셸 쪽 RCON 은 생략합니다.
-        // (0.39초 → 0.14초)
+        // --no-rcon: players are fetched natively below, so skip the shell's RCON
+        // call. (0.39s → 0.14s)
         if let json = try? await run(script: "status.sh", args: ["--json", "--no-rcon"], capture: true),
            let data = json.data(using: .utf8),
            let decoded = try? JSONDecoder().decode(ServerStatus.self, from: data) {
@@ -101,10 +100,10 @@ final class ServerController: ObservableObject {
         await loadBackups()
     }
 
-    // MARK: - 접속 주소
+    // MARK: - Connection address
 
-    /// 공인 IP 를 조회합니다. 외부(api.ipify.org)로 요청이 나가므로
-    /// 폴링에 섞지 않고 사용자가 명시적으로 요청할 때만 호출합니다.
+    /// Looks up the public IP. This calls out to api.ipify.org, so it is kept out of
+    /// the poll loop and only runs on explicit request.
     func fetchPublicIP() {
         guard !isFetchingPublicIP else { return }
         isFetchingPublicIP = true
@@ -126,8 +125,8 @@ final class ServerController: ObservableObject {
 
     // MARK: - RCON
 
-    /// RCON 자격 증명은 PalWorldSettings.ini 의 AdminPassword / RCONPort 가 원본입니다.
-    /// (실행 중인 서버가 실제로 검사하는 값이 그쪽이기 때문입니다.)
+    /// AdminPassword / RCONPort in PalWorldSettings.ini are the source of truth for
+    /// RCON credentials — those are the values the running server actually checks.
     private func prepareRcon() async {
         guard !rconReady else { return }
         if settings.isEmpty { await loadSettings() }
@@ -141,8 +140,8 @@ final class ServerController: ObservableObject {
     private func refreshPlayers() async {
         guard status.running, status.rconListening else {
             players = []
-            // 서버가 내려가면 버전도 잊습니다. 다음 기동 때 다시 읽어야
-            // 업데이트 후 바뀐 버전이 반영됩니다.
+            // Forget the version when the server goes down, so the next start picks
+            // up a version that changed during an update.
             gameVersion = nil
             return
         }
@@ -157,21 +156,22 @@ final class ServerController: ObservableObject {
             rconError = error.localizedDescription
         }
 
-        // 게임 버전은 한 번만 알아내면 됩니다 (재기동 전까지 바뀌지 않음).
+        // The game version only needs reading once; it can't change until a restart.
         if gameVersion == nil, let v = try? await rcon.info() {
-            // "Welcome to Pal Server[v1.0.2.101103] 서버이름" 에서 버전만.
-            // 서버가 한글 이름을 잘라 보내는 버그가 있지만 버전은 앞쪽이라 안전합니다.
+            // Extract just the version from "Welcome to Pal Server[v1.0.2.101103] name".
+            // The server truncates non-ASCII names, but the version comes first, so
+            // parsing it is safe.
             if let r = v.range(of: #"\[v[0-9.]+\]"#, options: .regularExpression) {
                 gameVersion = String(v[r]).trimmingCharacters(in: CharacterSet(charactersIn: "[v]"))
             }
         }
     }
 
-    // MARK: - 업데이트 확인
+    // MARK: - Update check
 
-    /// 설치 빌드와 Steam 최신 빌드를 비교합니다.
-    /// - Parameter cachedOnly: true 면 네트워크를 타지 않고 캐시만 읽습니다(즉시).
-    ///   상시 폴링에서 6초짜리 Steam 조회가 반복되지 않도록 하기 위함입니다.
+    /// Compares the installed build against Steam's latest.
+    /// - Parameter cachedOnly: read only the cache, no network (returns immediately).
+    ///   Keeps the 6-second Steam lookup out of the recurring poll.
     func checkUpdate(cachedOnly: Bool = false, force: Bool = false) async {
         if !cachedOnly { isCheckingUpdate = true }
         defer { isCheckingUpdate = false }
@@ -187,7 +187,7 @@ final class ServerController: ObservableObject {
         updateStatus = decoded
     }
 
-    /// 백업 → 안전 종료 → 업데이트 → 재기동.
+    /// Back up → shut down safely → update → start again.
     func updateServer() {
         let task = perform(t("서버 업데이트 중…"), script: "auto_restart.sh", args: ["--update"])
         Task {
@@ -196,7 +196,7 @@ final class ServerController: ObservableObject {
         }
     }
 
-    /// 접속자 전원에게 공지를 보냅니다.
+    /// Broadcasts a message to every connected player.
     func broadcast(_ message: String) {
         let text = message.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
@@ -211,13 +211,13 @@ final class ServerController: ObservableObject {
         rconCommand(t("%@ 밴", player.name), { try await self.rcon.ban(player.uid) })
     }
 
-    /// 세이브만 즉시 플러시합니다 (서버는 계속 실행).
+    /// Flushes the save to disk without stopping the server.
     func saveWorld() {
         rconCommand(t("월드 저장"), { try await self.rcon.save() })
     }
 
-    /// RCON 명령은 수십 ms 면 끝나므로 busyMessage 로 UI 를 잠그지 않고,
-    /// 결과만 로그에 남깁니다.
+    /// RCON commands finish in tens of milliseconds, so they don't lock the UI with
+    /// busyMessage — only the result is logged.
     private func rconCommand(_ label: String, _ body: @escaping () async throws -> String) {
         Task {
             await prepareRcon()
@@ -259,19 +259,19 @@ final class ServerController: ObservableObject {
             .sorted { $0.date > $1.date }
     }
 
-    // MARK: - 동작
+    // MARK: - Actions
 
     func start()   { perform(t("서버 기동 중…"),   script: "start_server.sh") }
     func stop()    { perform(t("안전 종료 중…"),   script: "stop_server.sh") }
-    /// 이름을 주면 `palworld_backup_<시각>_<이름>.tar.gz` 로 만들어지고,
-    /// 이름이 붙은 백업은 자동 정리에서 제외됩니다.
+    /// With a name, the archive becomes `palworld_backup_<time>_<name>.tar.gz`, and
+    /// named backups are excluded from automatic cleanup.
     func backup(named label: String = "") {
         let trimmed = label.trimmingCharacters(in: .whitespaces)
         let args = trimmed.isEmpty ? [] : ["--name", trimmed]
         perform(t("백업 생성 중…"), script: "backup_save.sh", args: args)
     }
 
-    /// 백업 이름 바꾸기. 빈 문자열을 주면 이름을 지웁니다.
+    /// Renames a backup. An empty string clears the name.
     func renameBackup(_ entry: BackupEntry, to newLabel: String) {
         perform(t("이름 변경 중…"), script: "backup_save.sh",
                 args: ["--rename", entry.filename,
@@ -280,12 +280,12 @@ final class ServerController: ObservableObject {
     func restart() { perform(t("재시작 중…"),      script: "auto_restart.sh") }
     func update()  { perform(t("서버 업데이트 중…"), script: "install_update.sh") }
 
-    /// 복원은 되돌리기 어려우므로 호출부(UI)에서 반드시 확인을 받은 뒤 부릅니다.
+    /// Restoring is hard to undo, so the UI must confirm before calling this.
     func restore(_ filename: String) {
         perform(t("복원 중…"), script: "restore_save.sh", args: [filename], stdin: "y\n")
     }
 
-    // MARK: - 게임 설정
+    // MARK: - Game settings
 
     func loadSettings() async {
         guard let json = try? await run(script: "settings.sh", args: ["--json"], capture: true),
@@ -304,11 +304,11 @@ final class ServerController: ObservableObject {
             )
         }
         pendingSettings.removeAll()
-        // AdminPassword / RCONPort 가 바뀌었을 수 있으므로 자격 증명을 다시 읽게 합니다.
+        // AdminPassword / RCONPort may have changed, so force credentials to reload.
         rconReady = false
     }
 
-    /// 편집 값을 보류 목록에 담습니다. 원래 값으로 되돌리면 목록에서 빠집니다.
+    /// Stages an edit. Setting it back to the original value removes it again.
     func stageSetting(_ key: String, _ newValue: String) {
         guard let original = settings.first(where: { $0.key == key }) else { return }
         if newValue == original.value {
@@ -320,19 +320,19 @@ final class ServerController: ObservableObject {
 
     func discardPendingSettings() { pendingSettings.removeAll() }
 
-    /// 항목 하나를 기본값으로 되돌립니다.
-    /// 즉시 파일에 쓰지 않고 '변경분'에만 담아, [적용] 전까지 취소할 수 있게 합니다.
+    /// Reverts one item to its default. Staged rather than written immediately, so it
+    /// can still be cancelled before Apply.
     func resetToDefault(_ key: String) {
         guard let item = settings.first(where: { $0.key == key }),
               let def = item.defaultValue else { return }
         stageSetting(key, def)
     }
 
-    /// 기본값과 다른 항목을 한꺼번에 되돌립니다.
-    /// - Parameter includeOperational: true 면 AdminPassword·RCONEnabled 같은
-    ///   운영 항목까지 포함합니다. 되돌리면 안전 종료가 시그널 방식으로 떨어져
-    ///   세이브 유실 위험이 생기므로 기본값은 false 입니다.
-    /// - Returns: 되돌릴 항목 수
+    /// Reverts every item that differs from its default.
+    /// - Parameter includeOperational: when true, also covers operational keys such as
+    ///   AdminPassword and RCONEnabled. Reverting those drops safe shutdown back to
+    ///   signals and risks save loss, hence the false default.
+    /// - Returns: how many items were staged.
     @discardableResult
     func resetAllToDefaults(includeOperational: Bool = false) -> Int {
         var count = 0
@@ -347,7 +347,7 @@ final class ServerController: ObservableObject {
         return count
     }
 
-    /// 기본값과 다른 항목 수 (운영 항목 제외).
+    /// Count of items differing from defaults, excluding operational keys.
     var modifiedGameplayCount: Int {
         settings.filter {
             guard let def = $0.defaultValue else { return false }
@@ -357,11 +357,11 @@ final class ServerController: ObservableObject {
 
     func applySettings() {
         guard !pendingSettings.isEmpty else { return }
-        // settings.sh 가 Key=Value 인자를 받아 '요청한 키만' 정밀 치환합니다.
+        // settings.sh takes Key=Value arguments and rewrites only those keys.
         let args = pendingSettings.map { "\($0.key)=\($0.value)" }.sorted()
         let task = perform(t("설정 저장 중…"), script: "settings.sh", args: ["--set"] + args)
         Task {
-            // 저장이 끝난 뒤 파일에서 다시 읽어 실제 반영 결과를 보여 줍니다.
+            // Re-read from disk afterwards so the UI shows what was actually written.
             await task.value
             await loadSettings()
         }
@@ -386,24 +386,25 @@ final class ServerController: ObservableObject {
         }
     }
 
-    // MARK: - 프로세스 실행
+    // MARK: - Process execution
 
     private func append(_ line: String) {
         logLines.append(line)
         if logLines.count > 400 { logLines.removeFirst(logLines.count - 400) }
     }
 
-    /// 스크립트를 실행합니다.
+    /// Runs a script.
     ///
-    /// [중요] Process 의 파이프 읽기(`availableData`, `readDataToEndOfFile`)와
-    /// `waitUntilExit()` 는 모두 **동기 블로킹** 호출입니다. 이 클래스는 @MainActor 라서
-    /// 그대로 실행하면 서버 기동(포트 대기 최대 120초)이나 안전 종료(30초 예고) 동안
-    /// 메인 스레드가 잡혀 UI 가 통째로 얼어붙습니다.
-    /// 그래서 실제 실행은 nonisolated 함수에서 백그라운드 큐로 넘기고,
-    /// 로그 추가·상태 갱신만 메인 액터로 돌아와 처리합니다.
+    /// [Important] Reading a Process pipe (`availableData`, `readDataToEndOfFile`) and
+    /// `waitUntilExit()` are all **synchronous blocking** calls. This class is
+    /// @MainActor, so running them inline would pin the main thread for the whole of a
+    /// server start (up to 120s waiting for the port) or a safe shutdown (30s warning)
+    /// and freeze the UI completely.
+    /// The actual execution therefore happens on a background queue from a nonisolated
+    /// function; only log appends and state updates hop back to the main actor.
     ///
-    /// - Parameter capture: true 면 stdout 을 문자열로 반환(상태 조회용),
-    ///                      false 면 출력을 실시간으로 로그 창에 흘려보냅니다.
+    /// - Parameter capture: true returns stdout as a string (for status queries);
+    ///                      false streams output into the log view as it arrives.
     @discardableResult
     private func run(script: String, args: [String], capture: Bool, stdin: String? = nil) async throws -> String {
         let dir = scriptsDirectory
@@ -414,12 +415,12 @@ final class ServerController: ObservableObject {
             ])
         }
 
-        // 스트리밍 모드일 때만 줄 단위 콜백을 넘깁니다.
-        // 콜백은 백그라운드에서 불리므로 메인 액터로 되돌려 @Published 를 갱신합니다.
+        // Only streaming mode gets a per-line callback. It is invoked on a background
+        // queue, so it hops to the main queue to update @Published state.
         var onLine: (@Sendable (String) -> Void)?
         if !capture {
             onLine = { [weak self] line in
-                // 백그라운드 큐에서 불리므로 메인 큐로 넘겨 @Published 를 갱신합니다.
+                // Called from a background queue; hop to main to touch @Published.
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         self?.append(line)
@@ -431,7 +432,7 @@ final class ServerController: ObservableObject {
         return try await Self.execute(path: path, args: args, cwd: dir, stdin: stdin, onLine: onLine)
     }
 
-    /// 실제 프로세스 실행. 메인 액터 밖에서 블로킹 I/O 를 수행합니다.
+    /// The actual process run — blocking I/O, performed off the main actor.
     private nonisolated static func execute(
         path: String,
         args: [String],
@@ -446,11 +447,11 @@ final class ServerController: ObservableObject {
                 process.arguments = [path] + args
                 process.currentDirectoryURL = URL(fileURLWithPath: cwd)
 
-                // GUI 앱은 로그인 셸을 거치지 않아 PATH 가 최소입니다.
-                // wine64 / lsof / python3 / tar 를 찾으려면 명시적으로 넣어야 합니다.
+                // GUI apps don't go through a login shell, so PATH is minimal.
+                // wine64 / lsof / python3 / tar need it spelled out explicitly.
                 var env = ProcessInfo.processInfo.environment
                 env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-                env["TERM"] = "dumb"    // 색 코드 억제
+                env["TERM"] = "dumb"    // suppress ANSI colour codes
                 process.environment = env
 
                 let outPipe = Pipe()
@@ -474,14 +475,14 @@ final class ServerController: ObservableObject {
                 let handle = outPipe.fileHandleForReading
 
                 guard let onLine else {
-                    // 캡처 모드: 전체 출력을 한 번에 읽어 반환
+                    // Capture mode: read the whole output at once and return it
                     let data = handle.readDataToEndOfFile()
                     process.waitUntilExit()
                     continuation.resume(returning: String(data: data, encoding: .utf8) ?? "")
                     return
                 }
 
-                // 스트리밍 모드: 줄 단위로 콜백에 넘김
+                // Streaming mode: hand each line to the callback
                 var buffer = Data()
                 while true {
                     let chunk = handle.availableData

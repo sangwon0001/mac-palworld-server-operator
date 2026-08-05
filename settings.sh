@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# settings.sh - PalWorldSettings.ini 의 OptionSettings 읽기/쓰기
+# settings.sh - Read and write OptionSettings in PalWorldSettings.ini
 #
-#   팰월드 설정은 119개 항목이 `OptionSettings=(K=V,K=V,...)` 한 줄에 들어 있습니다.
+#   Palworld packs 119 settings into a single `OptionSettings=(K=V,K=V,...)` line.
 #
-#   [안전 설계] 전체를 재직렬화하지 않고 '요청받은 키만 정밀 치환'합니다.
-#   게임 업데이트로 새 항목이 추가되어도 우리가 모르는 값이 유실되지 않습니다.
+#   [Safety design] Rather than re-serialising the whole line, only the requested
+#   keys are rewritten in place. A key added by a future game update is therefore
+#   never lost just because this script doesn't know about it.
 #
-#   사용법:
-#     ./settings.sh --json                     # 전체 설정을 JSON 으로 출력
-#     ./settings.sh --get ExpRate              # 값 하나 조회
-#     ./settings.sh --set ExpRate=2.0 ServerName="내 서버"
-#     ./settings.sh --diff                     # 기본값과 다른 항목만 표시
-#     ./settings.sh --reset                    # 게임플레이 값만 기본값 복구
-#     ./settings.sh --reset ExpRate Difficulty # 지정한 항목만 복구
-#     ./settings.sh --reset --all              # 운영 항목까지 전부 복구 (주의)
+#   Usage:
+#     ./settings.sh --json                     # dump all settings as JSON
+#     ./settings.sh --get ExpRate              # read one value
+#     ./settings.sh --set ExpRate=2.0 ServerName="My Server"
+#     ./settings.sh --diff                     # show only what differs from default
+#     ./settings.sh --reset                    # reset gameplay values only
+#     ./settings.sh --reset ExpRate Difficulty # reset the named keys only
+#     ./settings.sh --reset --all              # reset operational keys too (careful)
 # ==============================================================================
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -26,7 +27,7 @@ source ./config.sh
 MODE="${1:---json}"
 shift || true
 
-# 파이썬 구현부를 공유합니다 (파싱 규칙을 한 곳에만 두기 위함).
+# Shared python implementation, so the parsing rules live in exactly one place.
 run_py() {
   local py_mode="$1"; shift
   INI="$SETTINGS_INI" DEFAULT_INI="$DEFAULT_SETTINGS_INI" PY_MODE="$py_mode" \
@@ -45,7 +46,7 @@ if not m:
 body = m.group(2)
 
 def split_top(s):
-    """괄호/따옴표 안의 콤마는 무시하고 최상위 항목만 분리."""
+    """Split on top-level commas only, ignoring those inside parens or quotes."""
     out, depth, inq, cur = [], 0, False, ""
     for ch in s:
         if ch == '"':
@@ -76,7 +77,7 @@ for part in split_top(body):
     k, v = part.split('=', 1)
     items.append((k.strip(), v.strip()))
 
-# 기본값(DefaultPalWorldSettings.ini)과 비교하기 위한 사전
+# Defaults from DefaultPalWorldSettings.ini, for comparison
 defaults = {}
 dpath = os.environ.get("DEFAULT_INI", "")
 if dpath and os.path.exists(dpath):
@@ -90,10 +91,10 @@ if dpath and os.path.exists(dpath):
 def unquote(v):
     return v[1:-1] if v.startswith('"') and v.endswith('"') else v
 
-# 되돌리면 서버 접속·관리가 끊기는 항목들.
-# --reset 기본 동작에서는 건드리지 않습니다. 특히 AdminPassword 가 지워지고
-# RCONEnabled 가 False 로 돌아가면 안전 종료가 시그널 방식으로 떨어져
-# 세이브 유실 위험이 생깁니다. --all 을 줘야만 포함됩니다.
+# Keys that would cut off access or management if reverted.
+# --reset leaves these alone by default: clearing AdminPassword and flipping
+# RCONEnabled back to False drops safe shutdown to signals and risks losing the
+# save. They are only included with --all.
 OPERATIONAL_KEYS = {
     "AdminPassword", "ServerPassword", "ServerName", "ServerDescription",
     "RCONEnabled", "RCONPort", "RESTAPIEnabled", "RESTAPIPort",
@@ -101,7 +102,7 @@ OPERATIONAL_KEYS = {
 }
 
 def commit_changes(changes):
-    """[(key, old, new)] 를 파일에 반영. 요청한 키만 정밀 치환합니다."""
+    """Apply [(key, old, new)] to the file, rewriting only those keys."""
     if not changes:
         print("변경할 내용이 없습니다.")
         return 0
@@ -127,7 +128,7 @@ def commit_changes(changes):
     print(f"\n{len(changes)}개 항목 변경. 백업: {os.path.basename(path)}.bak_{stamp}")
     return 0
 
-# ------------------------------------------------------------------ 읽기
+# ------------------------------------------------------------------ Read
 if mode == "json":
     out = []
     for k, v in items:
@@ -137,7 +138,7 @@ if mode == "json":
             entry["default"] = unquote(defaults[k])
             entry["modified"] = defaults[k] != v
         out.append(entry)
-    # 비밀번호는 그대로 노출됩니다. 이 출력은 로컬 앱/CLI 전용입니다.
+    # Passwords appear verbatim; this output is for the local app/CLI only.
     print(json.dumps(out, ensure_ascii=False))
     sys.exit(0)
 
@@ -160,7 +161,7 @@ if mode == "diff":
             print(f"  {k.ljust(w)}  {d or '(빈값)'}  →  {c or '(빈값)'}")
     sys.exit(0)
 
-# ------------------------------------------------------------------ 쓰기
+# ------------------------------------------------------------------ Write
 if mode == "set":
     current = {k: v for k, v in items}
     changes = []
@@ -177,8 +178,8 @@ if mode == "set":
         t = kind(current[k])
         newv = newv.strip()
 
-        # 기존 항목의 자료형에 맞춰 값을 정규화합니다.
-        # 앱이나 사용자가 형식을 틀려도 파일이 깨지지 않게 하기 위함입니다.
+        # Normalise the value to the existing entry's type, so a wrong format from
+        # the app or the user cannot corrupt the file.
         if t == "bool":
             low = newv.strip('"').lower()
             if low in ("true", "1", "on", "yes"):    formatted = "True"
@@ -203,7 +204,7 @@ if mode == "set":
             if '"' in inner:
                 print(f"{k}: 값에 큰따옴표를 넣을 수 없습니다.", file=sys.stderr); sys.exit(6)
             formatted = f'"{inner}"'
-        else:  # enum, tuple 은 원문 그대로 사용
+        else:  # enum and tuple are used verbatim
             formatted = unquote(newv) if t == "enum" else newv
 
         if formatted != current[k]:
@@ -212,7 +213,7 @@ if mode == "set":
 
     sys.exit(commit_changes(changes))
 
-# ------------------------------------------------------------------ 기본값 복구
+# ------------------------------------------------------------------ Reset
 if mode == "reset":
     if not defaults:
         print("DefaultPalWorldSettings.ini 를 찾을 수 없어 기본값을 알 수 없습니다.",
@@ -225,7 +226,7 @@ if mode == "reset":
     current = {k: v for k, v in items}
 
     if wanted:
-        # 지정한 항목만 복구 (운영 항목이라도 명시했으면 존중합니다)
+        # Only the named keys — an operational key named explicitly is honoured
         targets = []
         for k in wanted:
             if k not in current:
@@ -274,7 +275,7 @@ case "$MODE" in
   --set)
     [[ $# -ge 1 ]] || die "Key=Value 형식으로 지정하세요."
     run_py set "$@"
-    # 실행 중이면 재시작해야 반영된다는 점을 분명히 알립니다.
+    # Make it clear that a running server needs a restart to pick this up.
     if is_running; then
       warn "서버가 실행 중입니다. 변경된 설정은 재시작 후에 적용됩니다."
       printf '    ./auto_restart.sh    (백업 후 안전하게 재시작)\n'

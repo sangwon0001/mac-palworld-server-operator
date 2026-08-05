@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// 게임 설정(PalWorldSettings.ini) 편집 화면.
+/// Editor for the game settings in PalWorldSettings.ini.
 ///
-/// 편집 내용은 즉시 저장하지 않고 '변경분'으로 모아 두었다가 [적용] 시 한 번에
-/// `settings.sh --set` 으로 넘깁니다. 실수로 값을 스쳤을 때 파일이 더럽혀지는 걸
-/// 막고, 무엇이 바뀔지 미리 보여 주기 위함입니다.
+/// Edits are staged rather than saved immediately, then handed to `settings.sh --set`
+/// in one batch on Apply. That keeps a stray slider nudge from dirtying the file and
+/// lets the user see exactly what will change.
 struct GameSettingsView: View {
     @EnvironmentObject var controller: ServerController
 
@@ -14,12 +14,12 @@ struct GameSettingsView: View {
     @State private var showResetAllConfirm = false
 
     var body: some View {
-        // [주의] 여기서 HSplitView 를 쓰면 안 됩니다.
-        // HSplitView 는 자식에게 폭을 제안하고 결과에 따라 다시 제안하는데,
-        // 아래 목록에 '폭에 따라 높이가 정해지는' 줄(fixedSize 로 여러 줄 감싸는
-        // 설명 텍스트)이 섞이면 제안이 수렴하지 않고 무한 재계산에 빠집니다.
-        // 실제로 메인 스레드가 sizeThatFits 안에서 100% 를 태우며 멈췄습니다.
-        // 사이드바 폭을 고정하면 그 순환 자체가 사라집니다.
+        // [Do not use HSplitView here.]
+        // HSplitView proposes a width to its children and re-proposes based on the
+        // result. When the list contains rows whose height depends on width (the
+        // wrapping help text with fixedSize), the proposals never converge and layout
+        // recalculates forever — the main thread was observed pinned at 100% inside
+        // sizeThatFits. Fixing the sidebar width removes the cycle entirely.
         HStack(spacing: 0) {
             sidebar.frame(width: 190)
             Divider()
@@ -45,7 +45,7 @@ struct GameSettingsView: View {
         }
     }
 
-    // MARK: - 좌측 분류
+    // MARK: - Category sidebar
 
     private var sidebar: some View {
         List(selection: $category) {
@@ -72,7 +72,7 @@ struct GameSettingsView: View {
         controller.settings.filter { SettingsCatalog.meta(for: $0.key).category == c }.count
     }
 
-    // MARK: - 우측 편집 영역
+    // MARK: - Editor pane
 
     private var detail: some View {
         VStack(spacing: 0) {
@@ -87,11 +87,11 @@ struct GameSettingsView: View {
                 )
             } else {
                 ScrollView {
-                    // LazyVStack 이 아니라 VStack 을 씁니다.
-                    // Lazy 계열은 스크롤 위치에 따라 자식을 늘렸다 줄이며 크기를
-                    // 다시 재는데, 그 과정이 위의 폭 제안과 얽혀 재계산이 반복됩니다.
-                    // 한 분류에 많아야 26개(검색 시 최대 119개)라 전부 그려도
-                    // 부담이 없으므로 지연 생성의 이점보다 안정성을 택합니다.
+                    // VStack, not LazyVStack. Lazy containers grow and shrink their
+                    // children as you scroll and re-measure as they go, which tangles
+                    // with the width proposals above and retriggers layout. A category
+                    // holds at most 26 rows (119 when searching), so rendering them all
+                    // is cheap — stability beats lazy instantiation here.
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(visible) { item in
                             SettingRow(item: item,
@@ -151,7 +151,7 @@ struct GameSettingsView: View {
         .padding(.vertical, 10)
     }
 
-    /// 검색어가 있으면 분류를 무시하고 전체에서 찾습니다.
+    /// With a search term, ignore the category and search everything.
     private var visible: [GameSetting] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         guard q.isEmpty else {
@@ -200,7 +200,7 @@ struct GameSettingsView: View {
     }
 }
 
-// MARK: - 개별 설정 행
+// MARK: - One setting row
 
 private struct SettingRow: View {
     let item: GameSetting
@@ -212,7 +212,7 @@ private struct SettingRow: View {
     private var current: String { pending ?? item.value }
     private var isDirty: Bool { pending != nil }
 
-    /// 지금 값이 기본값과 다른가 (편집 중인 값 기준).
+    /// Whether the current (possibly staged) value differs from the default.
     private var differsFromDefault: Bool {
         guard let def = item.defaultValue else { return false }
         return def != current
@@ -237,7 +237,7 @@ private struct SettingRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // 기본값과 다를 때만 되돌리기 버튼을 보여 줍니다.
+                // Only offer the revert link when the value differs from default.
                 if differsFromDefault, let def = item.defaultValue {
                     Button {
                         onReset()
@@ -314,7 +314,7 @@ private struct SettingRow: View {
         }
     }
 
-    /// 1.000000 처럼 꼬리가 긴 값을 1 로 줄여 보여 줍니다.
+    /// Trims trailing noise, showing 1.000000 as 1.
     private func trimFloat(_ s: String) -> String {
         guard let d = Double(s) else { return s }
         return d == d.rounded() && abs(d) < 1e9

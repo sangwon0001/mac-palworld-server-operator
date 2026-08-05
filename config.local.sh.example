@@ -1,34 +1,34 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # config.local.sh.example
-#   이 파일을 config.local.sh 로 복사한 뒤 본인 환경에 맞게 수정하세요.
-#   config.sh 가 마지막에 자동으로 읽어 들여 기본값을 덮어씁니다.
+#   Copy this to config.local.sh and adjust it for your machine.
+#   config.sh sources it last, so anything here overrides the defaults.
 #
 #     cp config.local.sh.example config.local.sh
 #
-#   AdminPassword 가 들어가므로 버전 관리에 올리지 마세요.
+#   It holds your AdminPassword, so keep it out of version control.
 # ==============================================================================
 
-# --- Wine 실행 파일 경로 (setup.sh 가 자동 탐색하지만 명시하는 편이 안전) ---
+# --- Wine executable (setup.sh can find it, but naming it here is safer) ------
 # CrossOver:
 # WINE_BIN="/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine"
-# Homebrew wine:
-# WINE_BIN="/usr/local/bin/wine64"
+# Homebrew wine / Game Porting Toolkit:
+# WINE_BIN="$(brew --prefix)/bin/wine64"
 
-# --- RCON (안전 종료 / 접속자 조회 / 자동 재시작 조건에 사용) --------------
-# PalWorldSettings.ini 의 AdminPassword 와 반드시 같은 값이어야 합니다.
-# RCON_PASSWORD="여기에_강한_비밀번호"
+# --- RCON (safe shutdown, player list, auto-restart conditions) ---------------
+# Must match AdminPassword in PalWorldSettings.ini.
+# RCON_PASSWORD="a-strong-password"
 # RCON_PORT=25575
-# RCON_SHUTDOWN_DELAY=30      # 종료 예고 초
+# RCON_SHUTDOWN_DELAY=30      # seconds of shutdown warning
 
-# --- 포트 / 인원 -----------------------------------------------------------
+# --- Ports and capacity ------------------------------------------------------
 # GAME_PORT=8211
 # MAX_PLAYERS=32
 
-# --- 경로 ------------------------------------------------------------------
+# --- Paths -------------------------------------------------------------------
 # PAL_ROOT="$HOME/PalworldServer"
 # BACKUP_DIR="$HOME/palworld_backups"
 
-# --- 백업 보존 정책 --------------------------------------------------------
-# BACKUP_RETENTION_DAYS=14    # 이보다 오래된 백업 삭제
-# BACKUP_RETENTION_MIN=10     # 단, 최신 N개는 무조건 보존
+# --- Backup retention --------------------------------------------------------
+# BACKUP_RETENTION_DAYS=14    # delete backups older than this
+# BACKUP_RETENTION_MIN=10     # but always keep at least this many

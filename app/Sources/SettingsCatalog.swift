@@ -1,6 +1,6 @@
 import Foundation
 
-/// `settings.sh --json` 의 한 항목.
+/// A single entry from `settings.sh --json`.
 struct GameSetting: Identifiable, Equatable {
     var id: String { key }
     let key: String
@@ -11,12 +11,15 @@ struct GameSetting: Identifiable, Equatable {
     let modified: Bool
 }
 
-/// 설정 항목에 붙이는 표시 정보.
+/// Presentation metadata for a setting.
 ///
-/// 팰월드 설정은 119개나 되고 키 이름만으로는 뜻을 알기 어려운 것이 많습니다.
-/// 자주 만지는 항목에는 한글 라벨·설명·입력 범위를 달아 두고,
-/// 나머지는 '기타'에서 키 이름 그대로 노출합니다.
-/// (게임 업데이트로 새 항목이 생겨도 자동으로 '기타'에 나타나 편집할 수 있습니다.)
+/// Palworld exposes 119 settings and many key names are opaque on their own. Common
+/// ones get a label, a description and an input range; the rest surface under "Other"
+/// with their raw key name. A new key introduced by a game update shows up there
+/// automatically and stays editable.
+///
+/// Labels are stored in Korean because they double as translation keys — see
+/// Localization.swift. They are translated at the point of display.
 struct SettingMeta {
     let label: String
     let category: Category
@@ -51,11 +54,11 @@ struct SettingMeta {
 
 enum SettingsCatalog {
 
-    /// 배율 계열 기본 범위 (0.1배 ~ 5배)
+    /// Default range for rate-style values (0.1x – 5x)
     private static let rate: ClosedRange<Double> = 0.1...5.0
 
     static let meta: [String: SettingMeta] = [
-        // ───────────────────────────────────────────────────── 서버
+        // ───────────────────────────────────────────────────── Server
         "ServerName": .init(label: "서버 이름", category: .server,
                             help: "서버 목록에 표시되는 이름"),
         "ServerDescription": .init(label: "서버 설명", category: .server),
@@ -80,18 +83,19 @@ enum SettingsCatalog {
         "ChatPostLimitPerMinute": .init(label: "분당 채팅 제한", category: .server),
         "CrossplayPlatforms": .init(label: "크로스플레이 플랫폼", category: .server),
         "LogFormatType": .init(label: "로그 형식", category: .server, options: ["Text", "Json"]),
-        // 아래 두 항목은 '게임 클라이언트로 코옵 월드를 호스팅할 때' 쓰는 값이라
-        // 데디케이티드 서버는 무시합니다. 라벨만 보면 "이걸 켜야 멀티가 되나?" 하고
-        // 오해하기 쉬워 설명을 분명히 답니다.
-        // 근거: Pocketpair 가 데디 서버 패키지에 배포하는 기본값이 bIsMultiplay=False 이고,
-        //       정원도 CoopPlayerMaxNum(4) 이 아니라 ServerPlayerMaxNum(32) 이 적용됩니다.
+        // The next two are for hosting a co-op world from the game client; a
+        // dedicated server ignores them. The bare labels invite the misreading
+        // "do I need this on for multiplayer?", hence the explicit help text.
+        // Evidence: Pocketpair ships bIsMultiplay=False in the dedicated server
+        // package, and capacity comes from ServerPlayerMaxNum (32), not
+        // CoopPlayerMaxNum (4).
         "bIsMultiplay": .init(label: "코옵 호스팅 모드 (서버 무관)", category: .server,
                               help: "게임 클라이언트로 직접 호스팅할 때 쓰는 값입니다. "
                                   + "데디케이티드 서버는 무시하므로 False 그대로 두세요. "
                                   + "멀티플레이는 이 값과 무관하게 이미 됩니다."),
         "bEnableVoiceChat": .init(label: "음성 채팅", category: .server),
 
-        // ───────────────────────────────────────────────── 게임플레이
+        // ───────────────────────────────────────────────── Gameplay
         "Difficulty": .init(label: "난이도", category: .gameplay,
                             options: ["None", "Casual", "Normal", "Hard"]),
         "DayTimeSpeedRate": .init(label: "낮 시간 배속", category: .gameplay, range: rate),
@@ -122,7 +126,7 @@ enum SettingsCatalog {
         "RespawnPenaltyDurationThreshold": .init(label: "리스폰 패널티 기준", category: .gameplay),
         "RespawnPenaltyTimeScale": .init(label: "리스폰 패널티 배율", category: .gameplay, range: rate),
 
-        // ───────────────────────────────────────────────────────── 팰
+        // ───────────────────────────────────────────────────────── Pals
         "PalCaptureRate": .init(label: "포획 확률 배율", category: .pal, range: rate),
         "PalSpawnNumRate": .init(label: "팰 출현 수 배율", category: .pal, range: rate),
         "PalDamageRateAttack": .init(label: "팰 공격력 배율", category: .pal, range: rate),
@@ -136,7 +140,7 @@ enum SettingsCatalog {
         "bAllowGlobalPalboxExport": .init(label: "글로벌 팰박스 내보내기", category: .pal),
         "bAllowGlobalPalboxImport": .init(label: "글로벌 팰박스 가져오기", category: .pal),
 
-        // ─────────────────────────────────────────────────── 플레이어
+        // ─────────────────────────────────────────────────── Player
         "PlayerDamageRateAttack": .init(label: "플레이어 공격력 배율", category: .player, range: rate),
         "PlayerDamageRateDefense": .init(label: "플레이어 방어력 배율", category: .player, range: rate),
         "PlayerStomachDecreaceRate": .init(label: "허기 감소 배율", category: .player, range: rate),
@@ -150,7 +154,7 @@ enum SettingsCatalog {
         "bAllowEnhanceStat_Weight": .init(label: "스탯 강화: 무게", category: .player),
         "bAllowEnhanceStat_WorkSpeed": .init(label: "스탯 강화: 작업 속도", category: .player),
 
-        // ────────────────────────────────────────────────── 채집 · 제작
+        // ────────────────────────────────────────────────── Gathering & Crafting
         "CollectionDropRate": .init(label: "채집 획득량 배율", category: .gather, range: rate),
         "CollectionObjectHpRate": .init(label: "채집물 내구도 배율", category: .gather, range: rate),
         "CollectionObjectRespawnSpeedRate": .init(label: "채집물 재생성 배율", category: .gather, range: rate),
@@ -161,7 +165,7 @@ enum SettingsCatalog {
         "EquipmentDurabilityDamageRate": .init(label: "장비 내구도 소모 배율", category: .gather, range: rate),
         "ItemCorruptionMultiplier": .init(label: "아이템 부패 배율", category: .gather, range: rate),
 
-        // ────────────────────────────────────────── 베이스캠프 · 길드
+        // ────────────────────────────────────────── Base Camp & Guild
         "BaseCampMaxNum": .init(label: "베이스캠프 최대 수", category: .base),
         "BaseCampWorkerMaxNum": .init(label: "캠프당 팰 배치 수", category: .base, range: 1...50),
         "BaseCampMaxNumInGuild": .init(label: "길드당 캠프 수", category: .base, range: 1...10),
@@ -196,7 +200,7 @@ enum SettingsCatalog {
         "bDisplayPvPItemNumOnWorldMap_Player":
             .init(label: "지도에 PvP 아이템 수 표시(플레이어)", category: .pvp),
 
-        // ─────────────────────────────────────────────── 그 밖의 항목
+        // ─────────────────────────────────────────────── Everything else
         "bAllowClientMod": .init(label: "클라이언트 모드 허용", category: .server),
         "BanListURL": .init(label: "밴 목록 URL", category: .server),
         "bIsShowJoinLeftMessage": .init(label: "접속/퇴장 메시지 표시", category: .server),
@@ -224,14 +228,14 @@ enum SettingsCatalog {
             .init(label: "팰 보관함 갱신 주기", category: .other),
     ]
 
-    /// 메타가 없는 항목은 '기타'로 보내고 키 이름을 그대로 라벨로 씁니다.
+    /// Entries without metadata land in "Other" and use the raw key as the label.
     static func meta(for key: String) -> SettingMeta {
         meta[key] ?? SettingMeta(label: key, category: .other)
     }
 
-    /// 기본값으로 되돌리면 접속·관리가 끊기는 항목들.
-    /// 일괄 복구에서는 제외하고, 개별 복구는 사용자가 명시했으므로 허용합니다.
-    /// (settings.sh 의 OPERATIONAL_KEYS 와 같은 목록을 유지해야 합니다.)
+    /// Keys that would cut off access or management if reset to defaults.
+    /// Excluded from bulk reset; individual reset is allowed since the user named it.
+    /// (Must stay in sync with OPERATIONAL_KEYS in settings.sh.)
     static let operationalKeys: Set<String> = [
         "AdminPassword", "ServerPassword", "ServerName", "ServerDescription",
         "RCONEnabled", "RCONPort", "RESTAPIEnabled", "RESTAPIPort",

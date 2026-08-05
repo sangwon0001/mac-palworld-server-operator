@@ -4,19 +4,17 @@ import SwiftUI
 struct PalworldServerApp: App {
     @StateObject private var controller = ServerController()
 
-    // 폴링 시작 위치에 대한 주의사항 두 가지:
+    // Two notes on where polling is started:
     //
-    //  1. onAppear 에 걸면 안 됩니다. 창이 닫힌 채(메뉴 막대만) 실행되면
-    //     호출되지 않아 메뉴 막대가 빈 값을 계속 보여줍니다.
-    //  2. App 의 init() 에서 컨트롤러를 직접 만들어도 안 됩니다.
-    //     SwiftUI 는 App 구조체를 여러 번 초기화할 수 있는데, @StateObject 는
-    //     첫 인스턴스만 보관하므로 나머지는 버려집니다. 그런데 그 버려진
-    //     인스턴스들의 폴링 Task 는 계속 돌아 RCON 호출이 배로 늘어납니다.
-    //     (실측: 3초 주기여야 할 ShowPlayers 가 15초에 30회)
+    //  1. Not in onAppear. When the app launches with the window closed (menu bar
+    //     only) it never fires, leaving the menu bar showing empty values.
+    //  2. Not by constructing the controller in App.init() either. SwiftUI may
+    //     initialise the App struct more than once; @StateObject keeps only the first
+    //     instance and discards the rest — but a discarded instance's poll task would
+    //     keep running.
     //
-    // 그래서 폴링은 ServerController.init() 안에서 시작하고, 여기서는
-    // @StateObject 의 autoclosure 에 생성을 맡깁니다. autoclosure 는 SwiftUI 가
-    // 실제로 필요할 때 단 한 번만 평가하므로 인스턴스가 하나로 보장됩니다.
+    // So polling starts inside ServerController.init(), and construction is left to
+    // @StateObject's autoclosure, which SwiftUI evaluates exactly once.
     var body: some Scene {
         Window(t("Palworld 서버"), id: "main") {
             ContentView()
@@ -24,8 +22,8 @@ struct PalworldServerApp: App {
         }
         .windowResizability(.contentMinSize)
 
-        // 메뉴 막대 상주 항목 — 창을 닫아도 상태를 계속 볼 수 있고
-        // 시작/종료/백업을 즉시 실행할 수 있습니다.
+        // Menu bar item — status stays visible with the window closed, and
+        // start/stop/backup are one click away.
         MenuBarExtra {
             MenuBarContent().environmentObject(controller)
         } label: {

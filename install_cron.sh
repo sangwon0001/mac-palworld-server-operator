@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# install_cron.sh - 정기 백업 / 자동 재시작 crontab 등록 도우미
+# install_cron.sh - Helper for scheduling backups and automatic restarts
 #
-#   기본 스케줄:
-#     매시 정각        세이브 백업
-#     매일 05:00       백업 + 재시작 (메모리 누수 해소)
-#     매일 06:00       메모리 8GB 초과 시에만 재시작 (보조 안전망)
+#   Default schedule:
+#     hourly       back up the save
+#     daily 05:00  back up and restart (clears the memory leak)
+#     daily 06:00  restart only if memory exceeds 8 GB (secondary safety net)
 #
-#   사용법:
-#     ./install_cron.sh --show      # 등록될 내용 미리보기
-#     ./install_cron.sh --install   # crontab 에 등록
-#     ./install_cron.sh --remove    # 등록 해제
+#   Usage:
+#     ./install_cron.sh --show      # preview what would be installed
+#     ./install_cron.sh --install   # write it into crontab
+#     ./install_cron.sh --remove    # take it back out
 # ==============================================================================
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -20,15 +20,15 @@ DIR="$PWD"
 MARK_BEGIN="# >>> palworld-server cron >>>"
 MARK_END="# <<< palworld-server cron <<<"
 
-# cron 은 PATH 가 최소라 brew 경로를 명시해야 tar/lsof/python3 등을 찾습니다.
+# cron runs with a minimal PATH, so brew's bin must be spelled out for tar/lsof/python3.
 CRON_BLOCK="$MARK_BEGIN
 PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 SHELL=/bin/bash
-# 매시 정각 세이브 백업
+# Hourly save backup
 0 * * * * cd $DIR && ./backup_save.sh >> $LOG_DIR/cron.log 2>&1
-# 매일 05:00 백업 후 재시작 (메모리 누수 해소)
+# Daily 05:00 backup and restart (clears the memory leak)
 0 5 * * * cd $DIR && ./auto_restart.sh >> $LOG_DIR/cron.log 2>&1
-# 매일 06:00 메모리 8GB 초과 & 접속자 0명일 때만 재시작
+# Daily 06:00 restart only if memory exceeds 8 GB and nobody is connected
 0 6 * * * cd $DIR && ./auto_restart.sh --if-over 8192 --if-empty >> $LOG_DIR/cron.log 2>&1
 $MARK_END"
 
@@ -40,7 +40,7 @@ case "${1:-}" in
   --install)
     ensure_dirs
     current="$(crontab -l 2>/dev/null || true)"
-    # 기존 블록이 있으면 제거 후 재등록 (중복 방지)
+    # Remove any existing block before re-adding, to avoid duplicates
     cleaned="$(printf '%s\n' "$current" | sed "/$MARK_BEGIN/,/$MARK_END/d")"
     printf '%s\n%s\n' "$cleaned" "$CRON_BLOCK" | sed '/^$/N;/^\n$/D' | crontab -
     ok "crontab 등록 완료"

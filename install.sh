@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# install.sh - 팰월드 서버 원클릭 설치 프로그램 (macOS / Apple Silicon)
+# install.sh - One-shot installer for the Palworld server (macOS / Apple Silicon)
 #
-#   의존성 점검·설치부터 서버 다운로드, 설정 생성, GUI 앱 빌드·설치까지
-#   한 번에 처리합니다.
+#   Covers everything from dependency checks through the server download, config
+#   generation and building/installing the GUI app.
 #
-#   설계 원칙:
-#     · 멱등성 — 이미 끝난 단계는 건너뜁니다. 중단 후 다시 실행해도 안전합니다.
-#     · 사용자 권한 실행 — Homebrew 는 root 실행을 거부하므로 sudo 로 감싸지
-#       않습니다. 권한이 필요한 단계(Rosetta)만 개별적으로 암호를 요청합니다.
-#     · 파괴적 동작 없음 — 기존 세이브/설정은 절대 덮어쓰지 않습니다.
+#   Design rules:
+#     · Idempotent — finished steps are skipped, so re-running after an interruption
+#       is safe.
+#     · Runs as the user — Homebrew refuses to run as root, so nothing is wrapped in
+#       sudo. Only the step that genuinely needs it (Rosetta) asks for a password.
+#     · Non-destructive — existing saves and settings are never overwritten.
 #
-#   사용법:
-#     ./install.sh              # 전체 설치 (대화형 확인 포함)
-#     ./install.sh --yes        # 확인 없이 진행 (무인 설치)
-#     ./install.sh --no-app     # GUI 앱 빌드 건너뛰기 (CLI 만 사용)
-#     ./install.sh --check      # 설치 상태만 점검하고 종료
+#   Usage:
+#     ./install.sh              # full install (with interactive confirmations)
+#     ./install.sh --yes        # unattended, no prompts
+#     ./install.sh --no-app     # skip the GUI app (CLI only)
+#     ./install.sh --check      # report installation state and exit
 # ==============================================================================
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -34,7 +35,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# --------------------------------------------------------------------- 출력
+# --------------------------------------------------------------------- Output
 c_rst=$'\033[0m'; c_red=$'\033[31m'; c_grn=$'\033[32m'
 c_ylw=$'\033[33m'; c_blu=$'\033[34m'; c_dim=$'\033[2m'; c_bold=$'\033[1m'
 
@@ -54,19 +55,19 @@ confirm() {
 
 TOTAL_STEPS=7
 
-# ============================================================ 사전 점검
+# ============================================================ Preflight
 printf '%s╔════════════════════════════════════════════════════════════╗%s\n' "$c_bold" "$c_rst"
 printf '%s║   팰월드 전용 서버 설치 프로그램  (macOS / Apple Silicon)  ║%s\n' "$c_bold" "$c_rst"
 printf '%s╚════════════════════════════════════════════════════════════╝%s\n' "$c_bold" "$c_rst"
 
 [[ "$(uname -s)" == "Darwin" ]] || die "macOS 전용입니다."
 
-# --- python3 실행 가능 여부 (Command Line Tools) -----------------------------
-# 새 맥에서는 /usr/bin/python3 파일이 '존재'하지만 실행하면 개발자 도구 설치
-# 대화상자만 띄우고 실패하는 스텁입니다. 그래서 command -v 로는 판별할 수 없고
-# 실제로 실행해 봐야 합니다.
-# RCON 클라이언트(config.sh), 상태 조회, 설정 편집이 모두 python3 에 의존하므로
-# 이게 없으면 설치를 진행해도 핵심 기능이 동작하지 않습니다.
+# --- Is python3 actually runnable? (Command Line Tools) ----------------------
+# On a fresh Mac /usr/bin/python3 exists as a file but is a stub: running it only
+# pops the developer-tools installer and fails. `command -v` therefore cannot tell
+# the difference — it has to actually be executed.
+# The RCON client (config.sh), status queries and settings editing all depend on
+# python3, so without it the install would finish with its core features broken.
 if ! python3 -c 'pass' >/dev/null 2>&1; then
   printf '\n%s✘ Command Line Tools 가 필요합니다%s\n\n' "$c_red" "$c_rst"
   printf '  python3 를 실행할 수 없습니다. 이 도구 모음은 RCON 안전 종료·상태 조회·\n'
@@ -78,8 +79,8 @@ fi
 
 source ./config.sh
 
-# 라벨을 '표시 폭' 기준으로 정렬해 출력합니다.
-# printf 의 %-18s 는 바이트 기준이라 한글(3바이트/2칸)이 섞이면 어긋납니다.
+# Align labels by display width. printf's %-18s pads by bytes, which misaligns as
+# soon as wide characters (3 bytes, 2 columns) are involved.
 kv() {
   python3 -c '
 import sys, unicodedata
@@ -89,7 +90,7 @@ print("  " + label + " " * max(1, width - disp) + value)
 ' "$1" "$2"
 }
 
-# 설치 상태 점검 결과를 모아 출력 (--check 및 최종 요약 공용)
+# Shared by --check and the final summary
 print_state() {
   local wine_state="미설치"
   detect_wine 2>/dev/null && wine_state="$WINE_BIN"
@@ -108,8 +109,8 @@ if [[ $CHECK_ONLY -eq 1 ]]; then
   exit 0
 fi
 
-# 실행 권한 부여. config.local.sh 는 비밀번호를 담고 있어 600 을 유지해야 하므로
-# 제외합니다 (`chmod +x ./*.sh` 로 싸잡으면 700/711 이 되어 의도한 권한이 깨집니다).
+# Make the scripts executable, but skip config.local.sh: it holds a password and
+# must stay at 600 (a blanket `chmod +x ./*.sh` would turn it into 700/711).
 for f in ./*.sh; do
   [[ "$(basename "$f")" == "config.local.sh" ]] && continue
   chmod +x "$f" 2>/dev/null || true
@@ -177,22 +178,22 @@ else
   ok "SteamCMD 설치 완료"
 fi
 
-# ============================================================ 5. 개인 설정
+# ============================================================ 5. Local settings
 step 5 "개인 설정 생성"
 if [[ -f config.local.sh ]]; then
   skip "config.local.sh"
 else
-  # RCON 비밀번호는 안전 종료(세이브 유실 방지)의 핵심이라 반드시 만들어 둡니다.
+  # The RCON password is what makes safe shutdown possible, so always generate one.
   PW="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
   cat > config.local.sh <<EOF
 #!/usr/bin/env bash
-# 개인 설정 — config.sh 의 기본값을 덮어씁니다. 버전 관리에 올리지 마세요.
+# Local settings — these override the defaults in config.sh. Do not commit this file.
 
-# install.sh 가 감지한 Wine 경로
+# Wine path detected by install.sh
 WINE_BIN="${WINE_BIN}"
 
-# RCON — 안전 종료 / 접속자 조회 / 자동 재시작 조건에 사용합니다.
-# PalWorldSettings.ini 의 AdminPassword 와 반드시 같아야 합니다.
+# RCON — used for safe shutdown, player queries and auto-restart conditions.
+# Must match AdminPassword in PalWorldSettings.ini.
 RCON_PASSWORD="${PW}"
 EOF
   chmod 600 config.local.sh
@@ -200,7 +201,7 @@ EOF
   note "생성된 RCON 비밀번호: $PW"
 fi
 
-# ============================================================ 6. 서버 본체
+# ============================================================ 6. The server
 step 6 "팰월드 서버 설치"
 if [[ -f "$PAL_EXE_SHIPPING" ]]; then
   skip "서버 본체 ($(du -sh "$PAL_ROOT" 2>/dev/null | cut -f1))"
@@ -210,8 +211,8 @@ else
   ./install_update.sh || die "서버 설치 실패"
 fi
 
-# --- RCON 설정을 ini 에 반영 (기존 값이 비어 있을 때만) ---
-source ./config.sh   # 방금 만든 config.local.sh 를 반영
+# --- Write RCON settings into the ini, but only if it is still unset ---
+source ./config.sh   # pick up the config.local.sh just created
 if [[ -f "$SETTINGS_INI" && -n "${RCON_PASSWORD:-}" ]]; then
   if grep -q 'AdminPassword=""' "$SETTINGS_INI" 2>/dev/null; then
     INI="$SETTINGS_INI" PW="$RCON_PASSWORD" python3 - <<'PY'
@@ -228,7 +229,7 @@ PY
   fi
 fi
 
-# ============================================================ 7. GUI 앱
+# ============================================================ 7. GUI app
 step 7 "GUI 앱 빌드 및 설치"
 if [[ $BUILD_APP -eq 0 ]]; then
   skip "GUI 앱 (--no-app)"
@@ -244,7 +245,7 @@ else
   fi
 fi
 
-# ============================================================ 완료
+# ============================================================ Done
 print_state
 
 cat <<EOF

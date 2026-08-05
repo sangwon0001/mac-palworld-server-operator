@@ -26,7 +26,7 @@ struct ContentView: View {
             Divider()
 
             Picker("", selection: $tab) {
-                // 루프 변수를 t 로 두면 번역 함수 t() 를 가려 버립니다.
+                // Naming the loop variable `t` would shadow the translation function.
                 ForEach(Tab.allCases, id: \.self) { tab in
                     Label(t(tab.rawValue), systemImage: tab.icon).tag(tab)
                 }
@@ -107,7 +107,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 헤더
+    // MARK: - Header
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -156,7 +156,7 @@ struct ContentView: View {
         return t("PID %@ · 가동 %@ · UDP %@", "\(s.pid)", s.uptime, "\(s.gamePort)")
     }
 
-    // MARK: - 지표
+    // MARK: - Metrics
 
     private var metrics: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], spacing: 12) {
@@ -201,7 +201,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 접속 주소
+    // MARK: - Connection address
 
     private var addressSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -218,7 +218,7 @@ struct ContentView: View {
                     Divider()
                 }
 
-                // 공인 IP 는 외부 서비스에 요청이 나가므로 누를 때만 조회합니다.
+                // The public IP calls an external service, so only fetch on demand.
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(t("외부 (인터넷)")).font(.caption).foregroundStyle(.secondary)
@@ -261,7 +261,7 @@ struct ContentView: View {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    // MARK: - 동작 버튼
+    // MARK: - Action buttons
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -305,7 +305,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 버전 · 업데이트
+    // MARK: - Version and updates
 
     private var versionSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -382,7 +382,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 접속자 (네이티브 RCON)
+    // MARK: - Players (native RCON)
 
     private var playersSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -422,7 +422,7 @@ struct ContentView: View {
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
             }
 
-            // 공지 방송
+            // Broadcast
             HStack(spacing: 8) {
                 TextField(t("전체 공지 보내기"), text: $broadcastText)
                     .textFieldStyle(.roundedBorder)
@@ -475,7 +475,7 @@ struct ContentView: View {
         broadcastText = ""
     }
 
-    // MARK: - 백업
+    // MARK: - Backups
 
     private var backupsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -490,7 +490,7 @@ struct ContentView: View {
                 .font(.caption)
             }
 
-            // 이름을 붙이면 자동 정리에서 제외되므로, 중요한 시점을 남길 때 씁니다.
+            // Naming a backup exempts it from cleanup — use it to mark key moments.
             HStack(spacing: 8) {
                 TextField(t("백업 이름 (선택) — 예: 보스전 직전"), text: $backupName)
                     .textFieldStyle(.roundedBorder)
@@ -537,7 +537,7 @@ struct ContentView: View {
                             Button(t("복원")) { restoreTarget = b }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                                // 실행 중 복원은 즉시 덮어써지므로 막습니다.
+                                // Restoring while running would be overwritten at once.
                                 .disabled(controller.isBusy || controller.status.running)
                         }
                         .padding(.vertical, 7)
@@ -555,7 +555,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 로그
+    // MARK: - Log
 
     private var logSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -582,13 +582,14 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 설정
+    // MARK: - Settings
 
     private var settingsSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(t("설정")).font(.title3.bold())
 
-            // 언어 선택. .lproj 번들을 직접 열어 조회하므로 재시작 없이 즉시 바뀝니다.
+            // Language picker. Lookups open the .lproj bundle directly, so the change
+            // takes effect immediately without a restart.
             VStack(alignment: .leading, spacing: 6) {
                 Text(t("언어")).font(.callout)
                 Picker("", selection: Binding(
@@ -638,7 +639,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 구성 요소
+// MARK: - Components
 
 private struct SectionTitle: View {
     let text: String
@@ -648,7 +649,7 @@ private struct SectionTitle: View {
     }
 }
 
-/// 접속 주소 한 줄 — 주소를 그대로 보여 주고 복사 버튼을 답니다.
+/// One connection-address row: shows the address verbatim with a copy button.
 private struct AddressRow: View {
     let label: String
     let address: String

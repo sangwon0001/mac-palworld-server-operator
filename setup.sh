@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# setup.sh - 0단계: 사전 요구사항 점검 및 설치 안내
-#   Homebrew / Rosetta 2 / Wine / steamcmd 상태를 확인하고,
-#   빠진 항목은 설치 명령을 안내합니다. (--install 로 자동 설치)
+# setup.sh - Check prerequisites and explain how to install what is missing
+#   Reports on Homebrew / Rosetta 2 / Wine / steamcmd and prints the commands for
+#   anything absent. (--install handles the ones that can be automated.)
 # ==============================================================================
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -18,7 +18,7 @@ hr() { printf '%s\n' "----------------------------------------------------------
 info "환경 점검을 시작합니다"
 hr
 
-# ------------------------------------------------------------ 1. CPU 아키텍처
+# ------------------------------------------------------------ 1. CPU architecture
 arch="$(uname -m)"
 if [[ "$arch" == "arm64" ]]; then
   ok "Apple Silicon (arm64) 확인"
@@ -27,7 +27,7 @@ else
 fi
 
 # --------------------------------------------------------------- 2. Rosetta 2
-# steamcmd 와 대부분의 Wine 빌드가 x86_64 이므로 Rosetta 2 가 필요합니다.
+# steamcmd and most Wine builds are x86_64, so Rosetta 2 is required.
 if [[ "$arch" == "arm64" ]]; then
   if /usr/bin/pgrep -q oahd || [[ -d /Library/Apple/usr/libexec/oah ]]; then
     ok "Rosetta 2 설치됨"
@@ -63,7 +63,7 @@ else
   missing+=("wine")
 fi
 
-# ------------------------------------------------------------------ 6. 부가도구
+# ------------------------------------------------------------------ 6. Extras
 for tool in tmux lsof python3; do
   if command -v "$tool" >/dev/null 2>&1; then
     ok "$tool 사용 가능"
@@ -74,7 +74,7 @@ done
 
 hr
 
-# ============================================================ 설치 안내 / 수행
+# ============================================================ Guidance / install
 if [[ ${#missing[@]} -eq 0 ]]; then
   ensure_dirs
   ok "모든 사전 요구사항 충족. 다음 단계: ./install_update.sh"
