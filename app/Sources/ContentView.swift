@@ -705,6 +705,12 @@ private struct ScriptLogView: View {
             .onChange(of: log.lines.last?.id) { _, last in
                 if let last { proxy.scrollTo(last, anchor: .bottom) }
             }
+            // onChange skips the value the view is built with. Without this, coming
+            // back from the settings tab while a script is running shows the log
+            // parked at the top until the next line happens to arrive.
+            .onAppear {
+                if let last = log.lines.last?.id { proxy.scrollTo(last, anchor: .bottom) }
+            }
         }
     }
 }
