@@ -6,13 +6,18 @@ struct ContentView: View {
     @State private var restoreTarget: BackupEntry?
     @State private var showSettings = false
     @State private var tab: Tab = .dashboard
-    @State private var broadcastText = ""
     @State private var kickTarget: RconClient.Player?
     @State private var banTarget: RconClient.Player?
     @State private var showUpdateConfirm = false
-    @State private var backupName = ""
     @State private var renameTarget: BackupEntry?
-    @State private var renameText = ""
+
+    /// The pending backup name lives in a reference box, not in a `@State String`.
+    /// This view's body is expensive (metrics, backup list, log), and a plain @State
+    /// would rebuild all of it on every keystroke. `@State` does not subscribe to an
+    /// ObservableObject — keep it that way, `@StateObject` here would bring the lag
+    /// back. Only BackupNameField observes the box; the "지금 백업" button just reads
+    /// the current text when tapped.
+    @State private var backupName = TextBox()
 
     enum Tab: String, CaseIterable {
         case dashboard = "대시보드"
@@ -59,37 +64,12 @@ struct ContentView: View {
         .frame(minWidth: 720, minHeight: 680)
         .sheet(isPresented: $showSettings) { settingsSheet }
         .sheet(item: $renameTarget) { target in
-            VStack(alignment: .leading, spacing: 14) {
-                Text(t("백업 이름 바꾸기")).font(.title3.bold())
-                Text(target.filename)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
-
-                TextField(t("이름 (비우면 이름 없음)"), text: $renameText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        controller.renameBackup(target, to: renameText)
-                        renameTarget = nil
-                    }
-
-                Text(t("이름을 붙이면 보관 기간이 지나도 자동으로 삭제되지 않습니다. 비우면 다시 자동 정리 대상이 됩니다."))
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button(t("취소")) { renameTarget = nil }
-                    Button(t("변경")) {
-                        controller.renameBackup(target, to: renameText)
-                        renameTarget = nil
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
+            RenameBackupSheet(entry: target) { newLabel in
+                controller.renameBackup(target, to: newLabel)
+                renameTarget = nil
+            } onCancel: {
+                renameTarget = nil
             }
-            .padding(20)
-            .frame(width: 460, height: 230)
         }
         .confirmationDialog(
             t("이 백업으로 복원할까요?"),
@@ -287,8 +267,8 @@ struct ContentView: View {
                 .disabled(!controller.status.running)
 
                 Button {
-                    controller.backup(named: backupName)
-                    backupName = ""
+                    controller.backup(named: backupName.text)
+                    backupName.text = ""
                 } label: {
                     Label(t("지금 백업"), systemImage: "archivebox").frame(maxWidth: .infinity)
                 }
@@ -423,13 +403,8 @@ struct ContentView: View {
             }
 
             // Broadcast
-            HStack(spacing: 8) {
-                TextField(t("전체 공지 보내기"), text: $broadcastText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(sendBroadcast)
-                Button(t("전송"), action: sendBroadcast)
-                    .disabled(broadcastText.trimmingCharacters(in: .whitespaces).isEmpty
-                              || !controller.status.running)
+            BroadcastField(canSend: controller.status.running) { message in
+                controller.broadcast(message)
             }
             Text(t("공백은 밑줄(_)로 바뀌어 전송됩니다 — 팰월드 RCON 이 공백을 인자 구분자로 취급하기 때문입니다. 또한 서버가 한글 등 비ASCII 문자를 잘라 보내는 버그가 있어, 공지는 영문·숫자로 쓰시는 편이 확실합니다."))
                 .font(.caption2).foregroundStyle(.tertiary)
@@ -470,11 +445,6 @@ struct ContentView: View {
         }
     }
 
-    private func sendBroadcast() {
-        controller.broadcast(broadcastText)
-        broadcastText = ""
-    }
-
     // MARK: - Backups
 
     private var backupsSection: some View {
@@ -491,17 +461,9 @@ struct ContentView: View {
             }
 
             // Naming a backup exempts it from cleanup — use it to mark key moments.
-            HStack(spacing: 8) {
-                TextField(t("백업 이름 (선택) — 예: 보스전 직전"), text: $backupName)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        controller.backup(named: backupName)
-                        backupName = ""
-                    }
-                if !backupName.isEmpty {
-                    Text(t("자동 삭제 안 됨"))
-                        .font(.caption2).foregroundStyle(.green)
-                }
+            BackupNameField(box: backupName) {
+                controller.backup(named: backupName.text)
+                backupName.text = ""
             }
 
             if controller.backups.isEmpty {
@@ -527,10 +489,7 @@ struct ContentView: View {
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Button(t("이름")) {
-                                renameTarget = b
-                                renameText = b.label
-                            }
+                            Button(t("이름")) { renameTarget = b }
                             .buttonStyle(.bordered).controlSize(.small)
                             .disabled(controller.isBusy)
 
@@ -636,6 +595,106 @@ struct ContentView: View {
         if panel.runModal() == .OK, let url = panel.url {
             controller.scriptsDirectory = url.path
         }
+    }
+}
+
+// MARK: - Text entry
+//
+// Every field below keeps the text being typed inside its own small view. Held on
+// ContentView instead, a single keystroke would invalidate the entire dashboard —
+// six metric cards, the backup list with its per-row date formatting, and the log —
+// which is what made typing a backup name feel like it was dropping keys.
+
+/// A string that can be edited by a child view without the parent observing it.
+private final class TextBox: ObservableObject {
+    @Published var text = ""
+}
+
+/// Name for the next backup, plus the reminder that naming it exempts it from cleanup.
+private struct BackupNameField: View {
+    @ObservedObject var box: TextBox
+    let onSubmit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField(t("백업 이름 (선택) — 예: 보스전 직전"), text: $box.text)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(onSubmit)
+            if !box.text.isEmpty {
+                Text(t("자동 삭제 안 됨"))
+                    .font(.caption2).foregroundStyle(.green)
+            }
+        }
+    }
+}
+
+/// Server-wide announcement field. Clears itself once the message is handed over.
+private struct BroadcastField: View {
+    let canSend: Bool
+    let onSend: (String) -> Void
+
+    @State private var text = ""
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField(t("전체 공지 보내기"), text: $text)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(send)
+            Button(t("전송"), action: send)
+                .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || !canSend)
+        }
+    }
+
+    private func send() {
+        onSend(text)
+        text = ""
+    }
+}
+
+/// Rename dialog. The entry is captured once at presentation time, so the sheet keeps
+/// showing the backup the user picked even when polling refreshes the list underneath.
+private struct RenameBackupSheet: View {
+    let entry: BackupEntry
+    let onRename: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String
+
+    init(entry: BackupEntry,
+         onRename: @escaping (String) -> Void,
+         onCancel: @escaping () -> Void) {
+        self.entry = entry
+        self.onRename = onRename
+        self.onCancel = onCancel
+        _name = State(initialValue: entry.label)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(t("백업 이름 바꾸기")).font(.title3.bold())
+            Text(entry.filename)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
+
+            TextField(t("이름 (비우면 이름 없음)"), text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { onRename(name) }
+
+            Text(t("이름을 붙이면 보관 기간이 지나도 자동으로 삭제되지 않습니다. 비우면 다시 자동 정리 대상이 됩니다."))
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
+            HStack {
+                Spacer()
+                Button(t("취소"), action: onCancel)
+                Button(t("변경")) { onRename(name) }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 460, height: 230)
     }
 }
 
