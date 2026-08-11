@@ -152,6 +152,10 @@ final class ServerController: ObservableObject {
     private func refreshPlayers() async {
         guard status.running, status.rconListening else {
             if !players.isEmpty { players = [] }
+            // A message about a failed query has nothing to say once there is nothing
+            // to query; leaving it set kept a stale error on screen for a running
+            // server whose RCON had since gone away.
+            if rconError != nil { rconError = nil }
             // Forget the version when the server goes down, so the next start picks
             // up a version that changed during an update.
             if gameVersion != nil { gameVersion = nil }
@@ -166,7 +170,8 @@ final class ServerController: ObservableObject {
             if rconError != nil { rconError = nil }
         } catch {
             if !players.isEmpty { players = [] }
-            rconError = error.localizedDescription
+            let message = error.localizedDescription
+            if rconError != message { rconError = message }
         }
 
         // The game version only needs reading once; it can't change until a restart.
