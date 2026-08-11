@@ -104,7 +104,9 @@ final class ServerController: ObservableObject {
             // because the running/rconListening flags are still false.
             return
         }
-        status = decoded
+        // Publishing an identical value still redraws the whole window, and most polls
+        // of a stopped server carry no news at all.
+        if status != decoded { status = decoded }
 
         await refreshPlayers()
         await loadBackups()
@@ -149,20 +151,21 @@ final class ServerController: ObservableObject {
 
     private func refreshPlayers() async {
         guard status.running, status.rconListening else {
-            players = []
+            if !players.isEmpty { players = [] }
             // Forget the version when the server goes down, so the next start picks
             // up a version that changed during an update.
-            gameVersion = nil
+            if gameVersion != nil { gameVersion = nil }
             return
         }
         await prepareRcon()
         guard rconReady else { return }
 
         do {
-            players = try await rcon.players()
-            rconError = nil
+            let fresh = try await rcon.players()
+            if players != fresh { players = fresh }
+            if rconError != nil { rconError = nil }
         } catch {
-            players = []
+            if !players.isEmpty { players = [] }
             rconError = error.localizedDescription
         }
 
@@ -249,9 +252,12 @@ final class ServerController: ObservableObject {
     private func loadBackups() async {
         let dir = status.backupDirectoryPath
         let fm = FileManager.default
-        guard let names = try? fm.contentsOfDirectory(atPath: dir) else { backups = []; return }
+        guard let names = try? fm.contentsOfDirectory(atPath: dir) else {
+            if !backups.isEmpty { backups = [] }
+            return
+        }
 
-        backups = names
+        let fresh = names
             .filter { $0.hasPrefix("palworld_backup_") && $0.hasSuffix(".tar.gz") }
             .compactMap { name in
                 let path = (dir as NSString).appendingPathComponent(name)
@@ -267,6 +273,11 @@ final class ServerController: ObservableObject {
                 )
             }
             .sorted { $0.date > $1.date }
+
+        // Backups change on user action, not on the clock — a poll that finds the same
+        // folder should not redraw the list. (This works only because BackupEntry's id
+        // is the filename; with a per-instance UUID no two reads compare equal.)
+        if backups != fresh { backups = fresh }
     }
 
     // MARK: - Actions

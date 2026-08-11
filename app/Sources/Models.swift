@@ -64,7 +64,11 @@ struct ServerStatus: Codable, Equatable {
 
 /// A backup as shown in the list.
 struct BackupEntry: Identifiable, Hashable {
-    let id = UUID()
+    /// The filename, which is unique within the backup folder. A fresh UUID per
+    /// instance would give every entry a new identity on each poll, so SwiftUI would
+    /// tear down and rebuild all the rows every few seconds even when the folder had
+    /// not changed — and no two lists of backups would ever compare equal.
+    var id: String { filename }
     let filename: String
     let size: String
     let date: Date
