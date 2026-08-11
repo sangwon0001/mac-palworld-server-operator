@@ -519,25 +519,7 @@ struct ContentView: View {
     private var logSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(t("실행 로그"))
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(controller.logLines.enumerated()), id: \.offset) { i, line in
-                            Text(line)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .id(i)
-                        }
-                    }
-                    .padding(10)
-                }
-                .frame(height: 150)
-                .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-                .onChange(of: controller.logLines.count) { _, count in
-                    if count > 0 { proxy.scrollTo(count - 1, anchor: .bottom) }
-                }
-            }
+            ScriptLogView(log: controller.log)
         }
     }
 
@@ -695,6 +677,35 @@ private struct RenameBackupSheet: View {
         }
         .padding(20)
         .frame(width: 460, height: 230)
+    }
+}
+
+/// Streaming script output, following the newest line.
+///
+/// Subscribes to the log alone rather than to the controller, so a script printing a
+/// few hundred lines redraws this box and nothing else.
+private struct ScriptLogView: View {
+    @ObservedObject var log: ScriptLog
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(log.lines) { line in
+                        Text(line.text)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(10)
+            }
+            .frame(height: 150)
+            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+            .onChange(of: log.lines.last?.id) { _, last in
+                if let last { proxy.scrollTo(last, anchor: .bottom) }
+            }
+        }
     }
 }
 

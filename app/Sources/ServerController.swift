@@ -1,6 +1,38 @@
 import Foundation
 import SwiftUI
 
+/// One line of script output.
+struct LogLine: Identifiable {
+    /// A running counter rather than the position in the array: the log is trimmed
+    /// from the front at 400 lines, which shifts every index down and would hand each
+    /// surviving row a new identity — the whole list rebuilt for one appended line.
+    let id: Int
+    let text: String
+}
+
+/// The streaming output of the script that is currently running.
+///
+/// Separate from ServerController so that a chatty script (an update prints hundreds
+/// of lines) only redraws the log view rather than the entire dashboard.
+@MainActor
+final class ScriptLog: ObservableObject {
+
+    @Published private(set) var lines: [LogLine] = []
+
+    private var nextID = 0
+
+    func append(_ text: String) {
+        lines.append(LogLine(id: nextID, text: text))
+        nextID += 1
+        // Long-running scripts would otherwise grow this without bound.
+        if lines.count > 400 { lines.removeFirst(lines.count - 400) }
+    }
+
+    func clear() {
+        if !lines.isEmpty { lines.removeAll() }
+    }
+}
+
 /// Runs the shell scripts and polls server state.
 ///
 /// Design rule: all server-control logic lives in the .sh scripts; this class only
@@ -11,8 +43,12 @@ final class ServerController: ObservableObject {
 
     @Published private(set) var status: ServerStatus = .unknown
     @Published private(set) var backups: [BackupEntry] = []
-    @Published private(set) var logLines: [String] = []
     @Published private(set) var busyMessage: String?
+
+    /// Script output. A plain `let`, not an @Published array: a running script emits
+    /// lines continuously, and as a property of this object every single one of them
+    /// would redraw the whole window. Only the log view subscribes to it.
+    let log = ScriptLog()
 
     /// Game settings as read from the file.
     @Published private(set) var settings: [GameSetting] = []
@@ -255,34 +291,48 @@ final class ServerController: ObservableObject {
     }
 
     private func loadBackups() async {
-        let dir = status.backupDirectoryPath
-        let fm = FileManager.default
-        guard let names = try? fm.contentsOfDirectory(atPath: dir) else {
-            if !backups.isEmpty { backups = [] }
-            return
-        }
-
-        let fresh = names
-            .filter { $0.hasPrefix("palworld_backup_") && $0.hasSuffix(".tar.gz") }
-            .compactMap { name in
-                let path = (dir as NSString).appendingPathComponent(name)
-                let attrs = try? fm.attributesOfItem(atPath: path)
-                let bytes = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-                let date = BackupEntry.parseDate(from: name)
-                    ?? (attrs?[.creationDate] as? Date) ?? .distantPast
-                return BackupEntry(
-                    filename: name,
-                    size: ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file),
-                    date: date,
-                    label: BackupEntry.parseLabel(from: name)
-                )
-            }
-            .sorted { $0.date > $1.date }
+        let fresh = await Self.readBackups(in: status.backupDirectoryPath)
 
         // Backups change on user action, not on the clock — a poll that finds the same
         // folder should not redraw the list. (This works only because BackupEntry's id
         // is the filename; with a per-instance UUID no two reads compare equal.)
         if backups != fresh { backups = fresh }
+    }
+
+    /// Lists the backup folder off the main actor.
+    ///
+    /// Reading a directory and stat-ing every archive in it is blocking disk I/O, and
+    /// it happened on every poll — three seconds apart, on the thread drawing the
+    /// window. Same reasoning as `execute` below; only the finished list comes back.
+    private nonisolated static func readBackups(in dir: String) async -> [BackupEntry] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let fm = FileManager.default
+                guard let names = try? fm.contentsOfDirectory(atPath: dir) else {
+                    continuation.resume(returning: [])
+                    return
+                }
+
+                let entries = names
+                    .filter { $0.hasPrefix("palworld_backup_") && $0.hasSuffix(".tar.gz") }
+                    .compactMap { name -> BackupEntry? in
+                        let path = (dir as NSString).appendingPathComponent(name)
+                        let attrs = try? fm.attributesOfItem(atPath: path)
+                        let bytes = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+                        let date = BackupEntry.parseDate(from: name)
+                            ?? (attrs?[.creationDate] as? Date) ?? .distantPast
+                        return BackupEntry(
+                            filename: name,
+                            size: ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file),
+                            date: date,
+                            label: BackupEntry.parseLabel(from: name)
+                        )
+                    }
+                    .sorted { $0.date > $1.date }
+
+                continuation.resume(returning: entries)
+            }
+        }
     }
 
     // MARK: - Actions
@@ -400,7 +450,7 @@ final class ServerController: ObservableObject {
                          args: [String] = [], stdin: String? = nil) -> Task<Void, Never> {
         guard !isBusy else { return Task<Void, Never> { } }
         busyMessage = message
-        logLines.removeAll()
+        log.clear()
         append("$ ./\(script) \(args.joined(separator: " "))")
 
         return Task {
@@ -416,10 +466,7 @@ final class ServerController: ObservableObject {
 
     // MARK: - Process execution
 
-    private func append(_ line: String) {
-        logLines.append(line)
-        if logLines.count > 400 { logLines.removeFirst(logLines.count - 400) }
-    }
+    private func append(_ line: String) { log.append(line) }
 
     /// Runs a script.
     ///
